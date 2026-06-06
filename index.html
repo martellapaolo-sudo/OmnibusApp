@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Omnibus Protocol Pro</title>
+    
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#000000">
+    <link rel="apple-touch-icon" href="https://via.placeholder.com/192/34c759/000000?text=O">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
+        
+        :root {
+            --bg: #000000; --surface: #1c1c1e; --surface-hover: #2c2c2e; --primary: #34c759; 
+            --text-main: #ffffff; --text-sec: #8e8e93; --border: #38383a;
+            --danger: #ff3b30; --warning: #ff9500; --blue: #007aff; --purple: #af52de;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--bg); color: var(--text-main); padding-bottom: 90px; }
+
+        #toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--primary); color: #000; padding: 12px 24px; border-radius: 30px; font-weight: 800; font-size: 0.85rem; opacity: 0; pointer-events: none; transition: 0.3s; z-index: 1000; box-shadow: 0 4px 12px rgba(52, 199, 89, 0.4); text-align: center; width: max-content;}
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(10px); }
+
+        .container { padding: 20px; }
+        .header { margin-bottom: 25px; padding-top: 10px; }
+        .time { font-size: 2.5rem; font-weight: 800; letter-spacing: -1px; color: var(--text-main); }
+        .date { font-size: 1rem; color: var(--text-sec); text-transform: capitalize; font-weight: 600; margin-top: -5px; }
+
+        .card { background-color: var(--surface); border-radius: 16px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+        .card-title { font-size: 1rem; font-weight: 800; margin-bottom: 15px; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center;}
+
+        /* Widget Stress */
+        .stress-widget { background: rgba(255, 149, 0, 0.1); border-left: 4px solid var(--warning); padding: 12px; border-radius: 8px; margin-bottom: 20px; display: none;}
+        .stress-title { font-weight: 800; color: var(--warning); font-size: 0.9rem; margin-bottom: 5px; }
+        .stress-desc { font-size: 0.85rem; color: #ffd60a; line-height: 1.4; }
+
+        /* Setup Giornata */
+        .day-toggle-container { display: flex; gap: 10px; margin-bottom: 15px; }
+        .day-btn { flex: 1; padding: 15px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text-sec); font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+        .day-btn span { font-size: 0.75rem; font-weight: 400; opacity: 0.8; }
+        .day-btn.active.carb { background-color: var(--primary); border-color: var(--primary); color: #000; }
+        .day-btn.active.nocarb { background-color: var(--blue); border-color: var(--blue); color: #fff; }
+        
+        .macro-status { background: var(--bg); border-radius: 12px; padding: 15px; text-align: center; border: 1px solid var(--border); }
+        .kcal-number { font-size: 2rem; font-weight: 800; margin-bottom: 5px; }
+
+        /* Checklist Base */
+        .checklist-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .checklist-item:last-child { border-bottom: none; padding-bottom: 0; }
+        .item-label { font-size: 0.95rem; font-weight: 600; }
+        .item-sub { display: block; font-size: 0.75rem; color: var(--text-sec); font-weight: 400; margin-top: 2px;}
+        
+        input[type="checkbox"] { appearance: none; width: 26px; height: 26px; border: 2px solid var(--text-sec); border-radius: 6px; cursor: pointer; position: relative; flex-shrink: 0; background-color: var(--bg);}
+        input[type="checkbox"]:checked { background-color: var(--primary); border-color: var(--primary); }
+        input[type="checkbox"]:checked::after { content: '✔'; position: absolute; color: #000; font-size: 16px; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; }
+        
+        /* Input & Buttons */
+        .weight-group { display: flex; gap: 10px; align-items: center; width: 100%; justify-content: flex-end;}
+        .weight-input { background: var(--bg); border: 1px solid var(--border); color: var(--text-main); font-weight: 800; font-size: 1rem; padding: 8px; width: 75px; text-align: center; border-radius: 8px; outline: none; }
+        .weight-input:focus { border-color: var(--primary); }
+        .text-input { background: var(--bg); border: 1px solid var(--border); color: var(--text-main); font-weight: 600; font-size: 0.9rem; padding: 10px; border-radius: 8px; width: 100%; outline: none; margin-bottom: 10px;}
+        .text-input:focus { border-color: var(--blue); }
+
+        .btn { background: var(--surface-hover); color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%; display: block; text-align: center;}
+        .btn-primary { background: var(--blue); color: white; font-weight: 800; }
+        .btn-danger { background: rgba(255, 59, 48, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+        
+        .timer-btn { background: var(--border); color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+        .timer-btn.active { background: var(--primary); color: black; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
+        /* Macro & Gamification Bars */
+        .macro-container { margin-bottom: 15px; }
+        .macro-header { display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: var(--text-sec);}
+        .progress-bg { background: var(--bg); border-radius: 8px; height: 12px; width: 100%; overflow: hidden; border: 1px solid var(--border); }
+        .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.5s; }
+        .fill-blue { background: var(--blue); }
+        .fill-warning { background: var(--warning); }
+        .macro-inputs { display: flex; gap: 10px; margin-bottom: 20px;}
+        .macro-inputs .input-group { flex: 1; display: flex; flex-direction: column; align-items: center;}
+        .macro-inputs label { font-size: 0.75rem; color: var(--text-sec); margin-bottom: 3px; }
+
+        /* UI Pasti */
+        .meal-item { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+        .meal-item:last-child { margin-bottom: 0; }
+        .meal-header { font-weight: 800; font-size: 0.9rem; color: var(--text-main); margin-bottom: 5px; display:flex; justify-content: space-between; align-items: center;}
+        .meal-desc { font-size: 0.8rem; color: var(--text-sec); line-height: 1.4;}
+        .meal-sub { font-size: 0.75rem; color: var(--warning); margin-top: 6px; border-top: 1px dashed var(--border); padding-top: 6px;}
+        .macro-badge { font-size: 0.65rem; background: var(--surface-hover); padding: 3px 6px; border-radius: 4px; color: var(--text-main); border: 1px solid var(--border);}
+
+        /* Setup Pro */
+        .settings-section { margin-bottom: 30px; }
+        .settings-section-title { font-size: 0.8rem; color: var(--text-sec); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; margin-left: 15px; }
+        .settings-block { background: var(--surface); border-radius: 12px; overflow: hidden; }
+        .settings-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid var(--border); transition: background 0.2s; cursor: pointer;}
+        .settings-row:last-child { border-bottom: none; }
+        .settings-icon { display: inline-flex; justify-content: center; align-items: center; width: 28px; height: 28px; border-radius: 6px; margin-right: 12px; color: white; font-size: 1rem;}
+        .bg-blue { background: var(--blue); } .bg-green { background: var(--primary); } .bg-orange { background: var(--warning); } .bg-purple { background: var(--purple); } .bg-red { background: var(--danger); }
+        .settings-label { flex: 1; font-weight: 500; font-size: 0.95rem; }
+        .settings-value { color: var(--text-sec); font-size: 0.9rem; display: flex; align-items: center; gap: 10px;}
+        .chevron::after { content: '›'; font-size: 1.5rem; margin-left: 10px; color: var(--text-sec); line-height: 0; position:relative; top: 1px;}
+        .settings-panel { display: none; padding: 15px; background: var(--bg); border-bottom: 1px solid var(--border); }
+        .settings-panel.open { display: block; animation: slideDown 0.3s; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        .chart-container { position: relative; height: 250px; width: 100%; margin-top: 15px; }
+        .flex-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px;}
+
+        /* Bottom Nav */
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; background: rgba(28, 28, 30, 0.9); border-top: 1px solid var(--border); display: flex; justify-content: space-around; padding: 10px 0 20px 0; z-index: 100; backdrop-filter: blur(10px); }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-sec); font-size: 0.65rem; font-weight: 600; cursor: pointer; flex: 1; }
+        .nav-item.active { color: var(--primary); }
+        .nav-icon { font-size: 1.4rem; margin-bottom: 2px;}
+        .tab-content { display: none; animation: fadeIn 0.2s ease; }
+        .tab-content.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div id="toast">Salvato ✓</div>
+
+    <div id="tab-oggi" class="tab-content active container">
+        <div class="header">
+            <div class="time" id="clock">--:--</div>
+            <div class="date" id="date-display">...</div>
+            <div id="greeting-msg" style="font-size: 1.1rem; font-weight: 800; color: var(--primary); margin-top: 10px;">Buongiorno.</div>
+        </div>
+
+        <div class="card" style="padding: 15px;">
+            <div class="macro-header">
+                <span style="color:var(--text-main); font-weight: 800;">Completamento Giornaliero</span>
+                <span id="daily-progress-text" style="color: var(--primary); font-weight: bold;">0%</span>
+            </div>
+            <div class="progress-bg" style="height: 8px; margin-top: 5px;">
+                <div class="progress-fill" id="daily-progress-bar" style="background: var(--primary);"></div>
+            </div>
+        </div>
+
+        <div class="stress-widget" id="stress-widget">
+            <div class="stress-title" id="stress-title">...</div>
+            <div class="stress-desc" id="stress-desc">...</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">⚡ Setup Giornata</div>
+            <div class="day-toggle-container">
+                <button class="day-btn" id="btn-nocarb" onclick="setDayType('nocarb')">Riposo / Clinica<span>Low Carb</span></button>
+                <button class="day-btn" id="btn-carb" onclick="setDayType('carb')">Allenamento<span>High Carb</span></button>
+            </div>
+            <div class="macro-status">
+                <div class="kcal-number" id="kcal-display">--</div>
+                <div style="font-size: 0.8rem; color: var(--text-sec);">Target Kcal Protocollo</div>
+            </div>
+        </div>
+
+        <div class="card" id="meals-card">
+            <div class="card-title">🍽️ Piano Alimentare Predittivo</div>
+            <div id="meals-macro-target" style="font-size: 0.85rem; color: var(--text-sec); margin-bottom: 12px; font-weight: bold;">Target: -- C | -- P | -- F</div>
+            <div id="meals-list">
+                </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">💊 Integrazione</div>
+            <div id="supplements-list-oggi"></div>
+        </div>
+
+        <div class="card" id="workout-card">
+            <div class="card-title">🏋️‍♂️ Protocollo V11</div>
+            <div id="dynamic-workout-list"></div>
+        </div>
+
+        <div class="card" id="tirocinio-card" style="display: none; border-color: var(--blue);">
+            <div class="card-title" style="color: var(--blue);">🥼 Routine Clinica & Recupero</div>
+            <p style="font-size: 0.85rem; color: var(--text-sec); margin-bottom: 15px;">Focus totale sull'attività nel reparto di Anatomia Patologica e scarico neurale per l'organismo.</p>
+            <div class="checklist-item">
+                <div><span class="item-label">Preparazione Borsa</span><span class="item-sub">Camice e appunti sistemati</span></div>
+                <input type="checkbox" data-type="recovery" value="bag" onchange="saveData()">
+            </div>
+            <div class="checklist-item">
+                <div><span class="item-label">Idratazione Tassativa</span><span class="item-sub">+2 Litri d'acqua in reparto</span></div>
+                <input type="checkbox" data-type="recovery" value="water" onchange="saveData()">
+            </div>
+            <div class="checklist-item">
+                <div><span class="item-label">Scarico Articolare</span><span class="item-sub">Stretching decompressivo serale</span></div>
+                <input type="checkbox" data-type="recovery" value="stretch" onchange="saveData()">
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-dieta" class="tab-content container">
+        <div class="header">
+            <div class="time">Nutrizione</div>
+            <div class="date">Integrazione Gemini AI</div>
+        </div>
+        <div class="card">
+            <div class="card-title">🤖 1. Genera Prompt</div>
+            <p style="font-size: 0.85rem; color: var(--text-sec); margin-bottom: 10px;">Scrivi cosa hai mangiato per ottenere i calcoli esatti.</p>
+            <textarea id="food-input" class="text-input" style="height: 80px; resize: none;" placeholder="Es. 150g petto di pollo, 100g riso basmati..."></textarea>
+            <button class="btn btn-primary" onclick="generateGeminiPrompt()">Copia Prompt per Gemini 📋</button>
+        </div>
+        <div class="card">
+            <div class="card-title">📊 2. Inserisci Valori</div>
+            <div class="macro-inputs">
+                <div class="input-group"><label>Kcal</label><input type="number" id="input-kcal" class="weight-input" style="width:100%" onchange="updateDietaUI()"></div>
+                <div class="input-group"><label>Carbo (g)</label><input type="number" id="input-cho" class="weight-input" style="width:100%" onchange="updateDietaUI()"></div>
+                <div class="input-group"><label>Pro (g)</label><input type="number" id="input-pro" class="weight-input" style="width:100%" onchange="updateDietaUI()"></div>
+                <div class="input-group"><label>Fat (g)</label><input type="number" id="input-fat" class="weight-input" style="width:100%" onchange="updateDietaUI()"></div>
+            </div>
+            <div class="macro-container"><div class="macro-header"><span style="color:var(--text-main)">Calorie Totali</span> <span id="label-kcal">0 / --</span></div><div class="progress-bg"><div class="progress-fill" id="bar-kcal"></div></div></div>
+            <div class="macro-container"><div class="macro-header"><span style="color:var(--blue)">Carboidrati</span> <span id="label-cho">0 / --</span></div><div class="progress-bg"><div class="progress-fill fill-blue" id="bar-cho"></div></div></div>
+            <div class="macro-container"><div class="macro-header"><span style="color:var(--primary)">Proteine</span> <span id="label-pro">0 / --</span></div><div class="progress-bg"><div class="progress-fill" id="bar-pro"></div></div></div>
+            <div class="macro-container"><div class="macro-header"><span style="color:var(--warning)">Grassi</span> <span id="label-fat">0 / --</span></div><div class="progress-bg"><div class="progress-fill fill-warning" id="bar-fat"></div></div></div>
+        </div>
+    </div>
+
+    <div id="tab-esami" class="tab-content container">
+        <div class="header">
+            <div class="time">Sessione</div>
+            <div class="date">Il Widget ti aiuterà a gestire lo stress</div>
+        </div>
+        <div class="card">
+            <div class="card-title">📚 Appelli in Arrivo</div>
+            <div id="exams-widget-list"></div>
+        </div>
+    </div>
+
+    <div id="tab-analisi" class="tab-content container">
+        <div class="header">
+            <div class="time">Analisi</div>
+            <div class="date">Dati Storici e Grafici</div>
+        </div>
+        <div class="card">
+            <div class="card-title">⚖️ Peso Odierno</div>
+            <div class="weight-group" style="width:100%;">
+                <input type="number" step="0.1" class="weight-input" id="daily-weight" placeholder="95.5" style="width: 100%; font-size: 1.2rem; padding: 12px;">
+                <span style="font-weight:bold;">Kg</span>
+            </div>
+            <button class="btn btn-primary" style="margin-top: 10px;" onclick="saveWeight()">Registra Peso</button>
+        </div>
+        <div class="card">
+            <div class="card-title">📈 Grafico Andamenti</div>
+            <select id="chart-selector" class="text-input" onchange="renderChart()"></select>
+            <div class="chart-container"><canvas id="historyChart"></canvas></div>
+        </div>
+    </div>
+
+    <div id="tab-setup" class="tab-content container">
+        <div class="header">
+            <div class="time">Impostazioni</div>
+            <div class="date">Personalizza l'esperienza</div>
+        </div>
+        <div class="settings-section">
+            <div class="settings-section-title">Motore Nutrizionale</div>
+            <div class="settings-block">
+                <div class="settings-row chevron" onclick="togglePanel('panel-macros-hc')"><div class="settings-icon bg-orange">🔥</div><div class="settings-label">Target High Carb</div><div class="settings-value" id="val-hc-kcal">2500 kcal</div></div>
+                <div id="panel-macros-hc" class="settings-panel">
+                    <div class="flex-row"><label style="width:80px;">Kcal:</label><input type="number" id="cfg-hc-kcal" class="text-input" onchange="saveMacros()"></div>
+                    <div class="flex-row"><label style="width:80px;">Carbo (g):</label><input type="number" id="cfg-hc-cho" class="text-input" onchange="saveMacros()"></div>
+                    <div class="flex-row"><label style="width:80px;">Pro (g):</label><input type="number" id="cfg-hc-pro" class="text-input" onchange="saveMacros()"></div>
+                    <div class="flex-row"><label style="width:80px;">Fat (g):</label><input type="number" id="cfg-hc-fat" class="text-input" onchange="saveMacros()"></div>
+                </div>
+                <div class="settings-row chevron" onclick="togglePanel('panel-macros-lc')"><div class="settings-icon bg-blue">🔋</div><div class="settings-label">Target Low Carb</div><div class="settings-value" id="val-lc-kcal">2100 kcal</div></div>
+                <div id="panel-macros-lc" class="settings-panel">
+                    <div class="flex-row"><label style="width:80px;">Kcal:</label><input type="number" id="cfg-lc-kcal" class="text-input" onchange="saveMacros()"></div>
+                    <div class="flex-row"><label style="width:80px;">Carbo (g):</label><input type="number" id="cfg-lc-cho" class="text-input" onchange="saveMacros()"></div>
+                    <div class="flex-row"><label style="width:80px;">Pro (g):</label><input type="number" id="cfg-lc-pro" class="text-input" onchange="saveMacros()"></div>
+                    <div class="flex-row"><label style="width:80px;">Fat (g):</label><input type="number" id="cfg-lc-fat" class="text-input" onchange="saveMacros()"></div>
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <div class="settings-section-title">Protocollo di Allenamento</div>
+            <div class="settings-block">
+                <div class="settings-row chevron" onclick="togglePanel('panel-workout')"><div class="settings-icon bg-green">🏋️‍♂️</div><div class="settings-label">Modifica Esercizi</div></div>
+                <div id="panel-workout" class="settings-panel">
+                    <div id="setup-exercises-list"></div>
+                    <div style="margin-top: 15px; border-top: 1px solid var(--border); padding-top:15px;">
+                        <input type="text" id="new-ex-name" class="text-input" placeholder="Nome Esercizio">
+                        <select id="new-ex-type" class="text-input"><option value="weight">Traccia Carico (Kg)</option><option value="check">Solo Spunta</option></select>
+                        <input type="number" id="new-ex-timer" class="text-input" placeholder="Timer recupero (s)">
+                        <button class="btn btn-primary" onclick="addExercise()">Aggiungi</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <div class="settings-section-title">Salute</div>
+            <div class="settings-block">
+                <div class="settings-row chevron" onclick="togglePanel('panel-supps')"><div class="settings-icon bg-purple">💊</div><div class="settings-label">Gestione Integratori</div></div>
+                <div id="panel-supps" class="settings-panel">
+                    <div id="setup-supps-list"></div>
+                    <div style="margin-top: 15px; border-top: 1px solid var(--border); padding-top:15px; display:flex; gap:10px;">
+                        <input type="text" id="new-supp-name" class="text-input" style="margin:0;" placeholder="Nuovo Integratore">
+                        <button class="btn btn-primary" style="width:auto;" onclick="addSupplement()">+</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <div class="settings-section-title">Calendario Accademico</div>
+            <div class="settings-block">
+                <div class="settings-row chevron" onclick="togglePanel('panel-exams')"><div class="settings-icon bg-red">📚</div><div class="settings-label">Gestione Appelli</div></div>
+                <div id="panel-exams" class="settings-panel">
+                    <div id="setup-exams-list"></div>
+                    <div style="margin-top: 15px; border-top: 1px solid var(--border); padding-top:15px;">
+                        <input type="text" id="new-exam-name" class="text-input" placeholder="Nome Esame">
+                        <input type="date" id="new-exam-date" class="text-input">
+                        <button class="btn btn-primary" onclick="addExam()">Aggiungi Esame</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <nav class="bottom-nav">
+        <div class="nav-item active" onclick="switchTab('oggi', this)" id="nav-oggi"><span class="nav-icon">📝</span>Oggi</div>
+        <div class="nav-item" onclick="switchTab('dieta', this)"><span class="nav-icon">🍎</span>Dieta</div>
+        <div class="nav-item" onclick="switchTab('esami', this)"><span class="nav-icon">📚</span>Esami</div>
+        <div class="nav-item" onclick="switchTab('analisi', this)"><span class="nav-icon">📈</span>Analisi</div>
+        <div class="nav-item" onclick="switchTab('setup', this)"><span class="nav-icon">⚙️</span>Setup</div>
+    </nav>
+
+    <script>
+        // --- STORAGE ENGINE ---
+        const SafeStorage = {
+            memory: {},
+            set: function(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch(e) { this.memory[key] = value; } },
+            get: function(key) { try { const val = localStorage.getItem(key); return val ? JSON.parse(val) : null; } catch(e) { return this.memory[key] || null; } },
+            getKeys: function() { try { return Object.keys(localStorage); } catch(e) { return Object.keys(this.memory); } }
+        };
+
+        const todayKey = new Date().toISOString().split('T')[0];
+        let saveTimeout;
+        let chartInstance = null;
+
+        // --- VALORI DEFAULT ---
+        const defaultMacros = { hc: { kcal: 2500, cho: 350, pro: 150, fat: 55 }, lc: { kcal: 2100, cho: 150, pro: 180, fat: 85 } };
+        const defaultSupps = [{ id: "crea", name: "Creatina (5g)" }, { id: "whey", name: "Whey Protein" }, { id: "o3", name: "Omega-3" }, { id: "d3k2", name: "Vit D3+K2" }];
+        const defaultExams = [{ id: "e1", name: "Biochimica", date: "2026-06-08" }, { id: "e2", name: "Genetica", date: "2026-06-10" }, { id: "e3", name: "Biochimica Umana", date: "2026-06-15" }];
+        const defaultExercises = [
+            { id: "ex_warm", name: "Riscaldamento & Mobilità", type: "check", timer: 0 },
+            { id: "ex_legp", name: "Leg Press 45°", type: "weight", timer: 120 },
+            { id: "ex_chest", name: "Chest Press", type: "weight", timer: 90 },
+            { id: "ex_latm", name: "Lat Machine", type: "weight", timer: 90 },
+            { id: "ex_legc", name: "Leg Curl", type: "weight", timer: 90 },
+            { id: "ex_cardio", name: "Cardio 20' LISS", type: "check", timer: 0 }
+        ];
+
+        // --- CORE FUNCTIONS ---
+        function showToast(msg = "Salvato ✓") {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg; toast.classList.add('show');
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => { toast.classList.remove('show'); }, 2000);
+        }
+
+        function switchTab(tabId, element) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tabId).classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            if(element) element.classList.add('active');
+            if (tabId === 'analisi') { populateChartSelector(); renderChart(); }
+            if (tabId === 'dieta') updateDietaUI();
+        }
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('date-display').innerText = now.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+            
+            const hr = now.getHours(); let greet = "Buonanotte";
+            if(hr >= 5 && hr < 12) greet = "Buongiorno"; else if(hr >= 12 && hr < 18) greet = "Buon pomeriggio"; else if(hr >= 18 && hr < 23) greet = "Buonasera";
+            document.getElementById('greeting-msg').innerText = `${greet}, Paolo.`;
+        }
+
+        function togglePanel(id) { document.getElementById(id).classList.toggle('open'); }
+
+        // --- SETUP MANAGER ---
+        function getMacros() { return SafeStorage.get('omnibus_macros') || defaultMacros; }
+        function getSupps() { return SafeStorage.get('omnibus_supps') || defaultSupps; }
+        function getExams() { return SafeStorage.get('omnibus_exams_list') || defaultExams; }
+        function getExercises() { return SafeStorage.get('omnibus_exercises') || defaultExercises; }
+
+        function initSettingsInputs() {
+            const m = getMacros();
+            ['hc', 'lc'].forEach(type => {
+                ['kcal', 'cho', 'pro', 'fat'].forEach(macro => { document.getElementById(`cfg-${type}-${macro}`).value = m[type][macro]; });
+                document.getElementById(`val-${type}-kcal`).innerText = m[type].kcal + " kcal";
+            });
+        }
+
+        function saveMacros() {
+            const newMacros = {
+                hc: { kcal: parseInt(document.getElementById('cfg-hc-kcal').value)||0, cho: parseInt(document.getElementById('cfg-hc-cho').value)||0, pro: parseInt(document.getElementById('cfg-hc-pro').value)||0, fat: parseInt(document.getElementById('cfg-hc-fat').value)||0 },
+                lc: { kcal: parseInt(document.getElementById('cfg-lc-kcal').value)||0, cho: parseInt(document.getElementById('cfg-lc-cho').value)||0, pro: parseInt(document.getElementById('cfg-lc-pro').value)||0, fat: parseInt(document.getElementById('cfg-lc-fat').value)||0 }
+            };
+            SafeStorage.set('omnibus_macros', newMacros); initSettingsInputs();
+            const currentType = SafeStorage.get('omnibus_dayType_' + todayKey) || 'nocarb';
+            setDayType(currentType, false); showToast("Macros Aggiornati");
+        }
+
+        function renderDynamicEngine() {
+            const savedData = SafeStorage.get('omnibus_data_' + todayKey) || { supplements: {}, workoutChecks: {}, workoutWeights: {}, recovery: {} };
+            
+            const supps = getSupps();
+            document.getElementById('supplements-list-oggi').innerHTML = supps.map(s => `<div class="checklist-item"><span class="item-label">${s.name}</span><input type="checkbox" data-type="supp" value="${s.id}" ${savedData.supplements && savedData.supplements[s.id] ? 'checked' : ''} onchange="saveData()"></div>`).join('');
+            document.getElementById('setup-supps-list').innerHTML = supps.map(s => `<div class="checklist-item" style="padding-bottom:10px;"><span>${s.name}</span><button class="btn-danger" style="padding:6px 12px; border-radius:6px;" onclick="removeSupplement('${s.id}')">Rimuovi</button></div>`).join('');
+
+            const exs = getExercises();
+            document.getElementById('dynamic-workout-list').innerHTML = exs.map(e => {
+                if(e.type === 'check') {
+                    return `<div class="checklist-item"><span class="item-label">${e.name}</span><input type="checkbox" data-type="wo-check" value="${e.id}" ${savedData.workoutChecks && savedData.workoutChecks[e.id] ? 'checked' : ''} onchange="saveData()"></div>`;
+                } else {
+                    const timerBtn = e.timer > 0 ? `<button class="timer-btn" onclick="startTimer(${e.timer}, this)">${e.timer}s</button>` : '';
+                    const val = savedData.workoutWeights && savedData.workoutWeights[e.id] ? savedData.workoutWeights[e.id] : '';
+                    
+                    // Sovraccarico visivo (Cerca record passato)
+                    let lastRecordStr = "";
+                    const keys = SafeStorage.getKeys().filter(k => k.startsWith('omnibus_data_') && k !== 'omnibus_data_' + todayKey).sort().reverse();
+                    for(let key of keys) {
+                        const past = SafeStorage.get(key);
+                        if(past && past.workoutWeights && past.workoutWeights[e.id]) { lastRecordStr = `<span class="item-sub">Obiettivo precedente: ${past.workoutWeights[e.id]} kg</span>`; break; }
+                    }
+
+                    return `<div class="checklist-item"><div><div class="item-label">${e.name}</div>${lastRecordStr}</div><div class="weight-group"><input type="number" class="weight-input" data-type="wo-weight" data-id="${e.id}" value="${val}" placeholder="Kg" onchange="saveData()">${timerBtn}</div></div>`;
+                }
+            }).join('');
+
+            document.getElementById('setup-exercises-list').innerHTML = exs.map(e => `<div class="checklist-item" style="padding-bottom:10px;"><div><strong>${e.name}</strong> <span style="font-size:0.75rem; color:var(--text-sec)">(${e.type === 'weight' ? 'Carico' : 'Spunta'})</span></div><button class="btn-danger" style="padding:6px 12px; border-radius:6px;" onclick="removeExercise('${e.id}')">Rimuovi</button></div>`).join('');
+
+            // Gestione Recovery Data
+            ['bag', 'water', 'stretch'].forEach(id => {
+                const el = document.querySelector(`input[data-type="recovery"][value="${id}"]`);
+                if(el && savedData.recovery) el.checked = savedData.recovery[id] || false;
+            });
+
+            // Render Esami
+            const exams = getExams().map(e => ({...e, parsedDate: new Date(e.date)})).sort((a,b) => a.parsedDate - b.parsedDate);
+            const now = new Date(); now.setHours(0,0,0,0);
+            const upcoming = exams.filter(e => e.parsedDate >= now);
+
+            document.getElementById('setup-exams-list').innerHTML = exams.map(e => `<div class="checklist-item" style="padding-bottom:10px;"><div><strong>${e.name}</strong> <br><span style="font-size:0.8rem; color:var(--text-sec)">${e.date}</span></div><button class="btn-danger" style="padding:6px 12px; border-radius:6px;" onclick="removeExam('${e.id}')">Rimuovi</button></div>`).join('');
+
+            const widgetList = document.getElementById('exams-widget-list');
+            if(upcoming.length === 0) widgetList.innerHTML = '<p style="color:var(--text-sec);font-size:0.85rem;">Nessun esame imminente.</p>';
+            else {
+                widgetList.innerHTML = upcoming.map(e => {
+                    const diffDays = Math.ceil((e.parsedDate - now) / (1000 * 60 * 60 * 24));
+                    let color = "var(--primary)"; if(diffDays <= 2) color = "var(--danger)"; else if (diffDays <= 5) color = "var(--warning)";
+                    return `<div class="checklist-item"><div><div class="item-label">${e.name} <span style="font-size:0.75rem; color:var(--text-sec); font-weight:normal; margin-left:8px;">${e.parsedDate.toLocaleDateString('it-IT', {day:'numeric', month:'short'})}</span></div><div style="font-size:0.8rem; color:${color}; font-weight:bold; margin-top:3px;">⏳ -${diffDays} giorni</div></div></div>`;
+                }).join('');
+            }
+            updateStressWidget(upcoming);
+        }
+
+        // Funzioni CRUD Settings
+        function addSupplement() { const input = document.getElementById('new-supp-name'); if(!input.value.trim()) return; const supps = getSupps(); supps.push({ id: 's_' + Date.now(), name: input.value.trim() }); SafeStorage.set('omnibus_supps', supps); input.value = ''; renderDynamicEngine(); showToast("Aggiunto"); }
+        function removeSupplement(id) { SafeStorage.set('omnibus_supps', getSupps().filter(s => s.id !== id)); renderDynamicEngine(); showToast("Rimosso"); }
+        function addExercise() { const name = document.getElementById('new-ex-name').value; const type = document.getElementById('new-ex-type').value; const timer = parseInt(document.getElementById('new-ex-timer').value) || 0; if(!name) return; const exs = getExercises(); exs.push({ id: 'ex_' + Date.now(), name: name, type: type, timer: timer }); SafeStorage.set('omnibus_exercises', exs); document.getElementById('new-ex-name').value = ''; renderDynamicEngine(); showToast("Aggiunto"); }
+        function removeExercise(id) { SafeStorage.set('omnibus_exercises', getExercises().filter(e => e.id !== id)); renderDynamicEngine(); showToast("Rimosso"); }
+        function addExam() { const name = document.getElementById('new-exam-name').value; const date = document.getElementById('new-exam-date').value; if(!name || !date) return; const exams = getExams(); exams.push({ id: 'e_' + Date.now(), name: name, date: date }); SafeStorage.set('omnibus_exams_list', exams); document.getElementById('new-exam-name').value = ''; renderDynamicEngine(); showToast("Aggiunto"); }
+        function removeExam(id) { SafeStorage.set('omnibus_exams_list', getExams().filter(e => e.id !== id)); renderDynamicEngine(); showToast("Rimosso"); }
+
+        function updateStressWidget(upcoming) {
+            const widget = document.getElementById('stress-widget');
+            if (upcoming.length > 0) {
+                const nextExam = upcoming[0];
+                const now = new Date(); now.setHours(0,0,0,0);
+                const diffDays = Math.ceil((nextExam.parsedDate - now) / (1000 * 60 * 60 * 24));
+                widget.style.display = 'block';
+                document.getElementById('stress-title').innerText = `⏳ -${diffDays} giorni a ${nextExam.name}`;
+                const desc = document.getElementById('stress-desc');
+                if (diffDays <= 2) { desc.innerText = "Fase critica. Focus assoluto sullo studio. No stress sistemico."; widget.style.borderLeftColor = "var(--danger)"; document.getElementById('stress-title').style.color = "var(--warning)";} 
+                else if (diffDays <= 5) { desc.innerText = "Mantieni ampio buffer (RIR 3) per prevenire affaticamento pre-esame."; widget.style.borderLeftColor = "var(--warning)"; document.getElementById('stress-title').style.color = "var(--warning)";} 
+                else { desc.innerText = "Nessun allarme. Progressione lineare approvata."; widget.style.borderLeftColor = "var(--primary)"; document.getElementById('stress-title').style.color = "var(--primary)"; desc.style.color = "var(--text-sec)"; }
+            } else { widget.style.display = 'none'; }
+        }
+
+        // --- MOTORE PASTI PREDITTIVI ---
+        function updateMealSuggestions(type) {
+            const m = getMacros();
+            const list = document.getElementById('meals-list');
+            const targetEl = document.getElementById('meals-macro-target');
+            
+            if(type === 'carb') {
+                targetEl.innerHTML = `Target: <span style="color:var(--blue)">${m.hc.cho}g C</span> | <span style="color:var(--primary)">${m.hc.pro}g P</span> | <span style="color:var(--warning)">${m.hc.fat}g F</span>`;
+                list.innerHTML = `
+                    <div class="meal-item">
+                        <div class="meal-header"><span>Colazione (Pre-Workout)</span> <span class="macro-badge">High Cho</span></div>
+                        <div class="meal-desc">Porridge d'avena (80-100g) cotto con acqua o latte scremato, misurino di Whey Protein (30g) e mirtilli.</div>
+                        <div class="meal-sub">🔄 Sostituzione: Fette biscottate o Pane di segale con abbondante albume cotto. Limitare le fonti di grassi (no burro d'arachidi).</div>
+                    </div>
+                    <div class="meal-item">
+                        <div class="meal-header"><span>Pranzo / Post-Workout</span> <span class="macro-badge">High Cho + Pro</span></div>
+                        <div class="meal-desc">Riso Basmati (120g) con Petto di Pollo ai ferri (150g) e Verdure. Olio EVO limitato (1 cucchiaio).</div>
+                        <div class="meal-sub">🔄 Sostituzione: Pasta o Gnocchi di patate. Fesa di Tacchino o Merluzzo. L'obiettivo è ripristinare il glicogeno rapidamente.</div>
+                    </div>
+                    <div class="meal-item">
+                        <div class="meal-header"><span>Spuntino Pomeridiano</span> <span class="macro-badge">Fast Carbs</span></div>
+                        <div class="meal-desc">Gallette di Riso o Mais (40g) con fette di fesa di tacchino (50g) o shaker di Whey.</div>
+                    </div>
+                    <div class="meal-item">
+                        <div class="meal-header"><span>Cena</span> <span class="macro-badge">Moderate Cho</span></div>
+                        <div class="meal-desc">Patate dolci o normali (300g) al forno, Trancio di Salmone o Pesce Bianco (200g) e verdure a foglia verde a volontà.</div>
+                    </div>`;
+            } else {
+                targetEl.innerHTML = `Target: <span style="color:var(--blue)">${m.lc.cho}g C</span> | <span style="color:var(--primary)">${m.lc.pro}g P</span> | <span style="color:var(--warning)">${m.lc.fat}g F</span>`;
+                list.innerHTML = `
+                    <div class="meal-item">
+                        <div class="meal-header"><span>Colazione (Low Carb)</span> <span class="macro-badge">Pro + Fat</span></div>
+                        <div class="meal-desc">Uova intere (2/3) strapazzate con aggiunta di albume liquido (100g) e una manciata di mandorle o noci (20g).</div>
+                        <div class="meal-sub">🔄 Sostituzione: Yogurt Greco 5% grassi (200g) con semi di chia e crema di arachidi. Tenere i carboidrati vicini allo zero.</div>
+                    </div>
+                    <div class="meal-item">
+                        <div class="meal-header"><span>Pranzo (Box Anatomia Patologica)</span> <span class="macro-badge">Satiety Focus</span></div>
+                        <div class="meal-desc">Insalatona mista da portare in reparto: Salmone affumicato (100g), mezzo Avocado (50g), Olio EVO abbondante.</div>
+                        <div class="meal-sub">🔄 Sostituzione: Tonno in scatola o Sgombro. Puoi accompagnare con una quota minima di gallette o pane di segale (max 30g).</div>
+                    </div>
+                    <div class="meal-item">
+                        <div class="meal-header"><span>Spuntino Veloce</span> <span class="macro-badge">Pro + Fat</span></div>
+                        <div class="meal-desc">Shaker di Whey Protein in acqua per praticità ospedaliera + Cioccolato fondente 85% (15g).</div>
+                    </div>
+                    <div class="meal-item">
+                        <div class="meal-header"><span>Cena</span> <span class="macro-badge">High Pro</span></div>
+                        <div class="meal-desc">Bistecca di Manzo magro o Cosce di Pollo (200g), Verdure fibrose (es. broccoli, cavolfiore) condite generosamente con Olio EVO.</div>
+                        <div class="meal-sub">🔄 Sostituzione: Formaggi magri (fiocchi di latte) o hamburger di tacchino. Ammessa una mela a fine pasto per spezzare.</div>
+                    </div>`;
+            }
+        }
+
+        // --- TRACKER GIORNALIERO E GAMIFICATION ---
+        function setDayType(type, triggerToast = true) {
+            const btnCarb = document.getElementById('btn-carb'); const btnNoCarb = document.getElementById('btn-nocarb');
+            const workoutCard = document.getElementById('workout-card'); const tirocinioCard = document.getElementById('tirocinio-card');
+            const m = getMacros();
+
+            btnCarb.classList.remove('active', 'carb'); btnNoCarb.classList.remove('active', 'nocarb');
+
+            if (type === 'carb') {
+                btnCarb.classList.add('active', 'carb');
+                document.getElementById('kcal-display').innerHTML = m.hc.kcal + ' <span style="font-size:1rem; color:#a1a1aa;">kcal</span>';
+                workoutCard.style.display = "block"; tirocinioCard.style.display = "none";
+            } else {
+                btnNoCarb.classList.add('active', 'nocarb');
+                document.getElementById('kcal-display').innerHTML = m.lc.kcal + ' <span style="font-size:1rem; color:#a1a1aa;">kcal</span>';
+                workoutCard.style.display = "none"; tirocinioCard.style.display = "block";
+            }
+            SafeStorage.set('omnibus_dayType_' + todayKey, type);
+            updateMealSuggestions(type);
+            updateDietaUI(); 
+            updateDailyProgress();
+            if(triggerToast) showToast();
+        }
+
+        function updateDailyProgress() {
+            const type = SafeStorage.get('omnibus_dayType_' + todayKey) || 'nocarb';
+            let total = 0; let done = 0;
+
+            const supps = document.querySelectorAll('input[data-type="supp"]');
+            total += supps.length; supps.forEach(el => { if(el.checked) done++; });
+
+            if(type === 'carb') {
+                const checks = document.querySelectorAll('input[data-type="wo-check"]');
+                const weights = document.querySelectorAll('input[data-type="wo-weight"]');
+                total += checks.length + weights.length;
+                checks.forEach(el => { if(el.checked) done++; });
+                weights.forEach(el => { if(el.value !== "") done++; });
+            } else {
+                const recoveries = document.querySelectorAll('input[data-type="recovery"]');
+                total += recoveries.length;
+                recoveries.forEach(el => { if(el.checked) done++; });
+            }
+
+            const perc = total === 0 ? 0 : Math.round((done / total) * 100);
+            document.getElementById('daily-progress-text').innerText = `${perc}%`;
+            document.getElementById('daily-progress-bar').style.width = `${perc}%`;
+            if(perc === 100) document.getElementById('daily-progress-bar').style.background = "var(--blue)";
+            else document.getElementById('daily-progress-bar').style.background = "var(--primary)";
+        }
+
+        function saveData() {
+            const dayData = { supplements: {}, workoutChecks: {}, workoutWeights: {}, recovery: {} };
+            document.querySelectorAll('input[data-type="supp"]').forEach(el => dayData.supplements[el.value] = el.checked);
+            document.querySelectorAll('input[data-type="wo-check"]').forEach(el => dayData.workoutChecks[el.value] = el.checked);
+            document.querySelectorAll('input[data-type="wo-weight"]').forEach(el => dayData.workoutWeights[el.dataset.id] = el.value);
+            document.querySelectorAll('input[data-type="recovery"]').forEach(el => dayData.recovery[el.value] = el.checked);
+            SafeStorage.set('omnibus_data_' + todayKey, dayData); 
+            updateDailyProgress();
+            showToast();
+        }
+
+        function loadData() {
+            initSettingsInputs();
+            renderDynamicEngine();
+            const savedType = SafeStorage.get('omnibus_dayType_' + todayKey);
+            if (savedType) setDayType(savedType, false); else [1, 3, 5].includes(new Date().getDay()) ? setDayType('carb', false) : setDayType('nocarb', false);
+
+            const dieta = SafeStorage.get('omnibus_dieta_' + todayKey);
+            if(dieta) {
+                document.getElementById('input-kcal').value = dieta.kcal || ''; document.getElementById('input-cho').value = dieta.cho || '';
+                document.getElementById('input-pro').value = dieta.pro || ''; document.getElementById('input-fat').value = dieta.fat || '';
+            }
+            const w = SafeStorage.get('omnibus_weight_' + todayKey);
+            if(w) document.getElementById('daily-weight').value = w;
+            updateDailyProgress();
+        }
+
+        // --- DIETA E GEMINI ---
+        function generateGeminiPrompt() {
+            const food = document.getElementById('food-input').value;
+            if(!food.trim()) { alert("Inserisci prima i cibi mangiati!"); return; }
+            const prompt = `Ciao Gemini, agisci come nutrizionista sportivo. Ho mangiato questi alimenti oggi: ${food}. Calcolami accuratamente il totale delle Kcal, dei Carboidrati (g), delle Proteine (g) e dei Grassi (g). Formatta la risposta fornendomi esclusivamente una lista puntata con i 4 numeri totali, senza testo extra.`;
+            navigator.clipboard.writeText(prompt).then(() => { showToast("Prompt Copiato!"); });
+        }
+
+        function updateDietaUI() {
+            const m = getMacros();
+            const isCarb = SafeStorage.get('omnibus_dayType_' + todayKey) === 'carb';
+            const targets = isCarb ? m.hc : m.lc;
+            const vals = { kcal: parseInt(document.getElementById('input-kcal').value)||0, cho: parseInt(document.getElementById('input-cho').value)||0, pro: parseInt(document.getElementById('input-pro').value)||0, fat: parseInt(document.getElementById('input-fat').value)||0 };
+            SafeStorage.set('omnibus_dieta_' + todayKey, vals);
+
+            const updateBar = (id, val, target) => {
+                document.getElementById(`label-${id}`).innerText = `${val} / ${target}`;
+                let perc = Math.min((val / target) * 100, 100);
+                const bar = document.getElementById(`bar-${id}`); bar.style.width = perc + '%';
+                if(val > target + (target*0.1)) bar.style.backgroundColor = "var(--danger)"; else bar.style.backgroundColor = ""; 
+            };
+            updateBar('kcal', vals.kcal, targets.kcal); updateBar('cho', vals.cho, targets.cho); updateBar('pro', vals.pro, targets.pro); updateBar('fat', vals.fat, targets.fat);
+        }
+
+        function saveWeight() { const w = document.getElementById('daily-weight').value; if(w) { SafeStorage.set('omnibus_weight_' + todayKey, w); showToast(); renderChart(); } }
+
+        // --- CHART.JS ---
+        function populateChartSelector() {
+            const select = document.getElementById('chart-selector'); const prevVal = select.value;
+            let options = `<option value="weight">Peso Corporeo (kg)</option><option value="kcal">Calorie Assunte (kcal)</option>`;
+            getExercises().filter(e => e.type === 'weight').forEach(e => { options += `<option value="${e.id}">${e.name} (kg)</option>`; });
+            select.innerHTML = options; if(prevVal && Array.from(select.options).some(o => o.value === prevVal)) select.value = prevVal;
+        }
+
+        function renderChart() {
+            const selector = document.getElementById('chart-selector').value; const ctx = document.getElementById('historyChart'); if(!ctx) return;
+            let datesSet = new Set(); for(let key of SafeStorage.getKeys()) { if(key.match(/omnibus_(data|weight|dieta)_/)) datesSet.add(key.split('_').pop()); }
+            let dates = Array.from(datesSet).sort();
+            let labels = []; let dataPoints = []; let labelName = ""; let borderColor = "";
+
+            dates.forEach(d => {
+                const displayDate = new Date(d).toLocaleDateString('it-IT', {day: 'numeric', month: 'short'});
+                if(selector === 'weight') { const w = SafeStorage.get('omnibus_weight_' + d); if(w) { labels.push(displayDate); dataPoints.push(parseFloat(w)); } labelName = "Peso (kg)"; borderColor = "#34c759"; } 
+                else if (selector === 'kcal') { const dieta = SafeStorage.get('omnibus_dieta_' + d); if(dieta && dieta.kcal) { labels.push(displayDate); dataPoints.push(dieta.kcal); } labelName = "Calorie (Kcal)"; borderColor = "#ff9500"; } 
+                else { const data = SafeStorage.get('omnibus_data_' + d); if(data && data.workoutWeights && data.workoutWeights[selector]) { labels.push(displayDate); dataPoints.push(parseFloat(data.workoutWeights[selector])); } const exName = getExercises().find(e=>e.id === selector)?.name || "Esercizio"; labelName = `${exName} (kg)`; borderColor = "#007aff"; }
+            });
+
+            if(chartInstance) chartInstance.destroy();
+            if(labels.length === 0) { labels = ["Nessun Dato"]; dataPoints = [0]; }
+
+            chartInstance = new Chart(ctx.getContext('2d'), {
+                type: 'line', data: { labels: labels, datasets: [{ label: labelName, data: dataPoints, borderColor: borderColor, backgroundColor: borderColor + '33', borderWidth: 3, pointRadius: 5, pointBackgroundColor: '#000', fill: true, tension: 0.3 }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { color: '#8e8e93' }, grid: { color: '#38383a' } }, x: { ticks: { color: '#8e8e93' }, grid: { display: false } } }, plugins: { legend: { labels: { color: '#ffffff', font: { family: 'Inter', weight:'bold' } } } } }
+            });
+        }
+
+        // --- TIMER ---
+        let activeTimer = null;
+        function startTimer(seconds, btnElement) {
+            if (activeTimer) clearInterval(activeTimer);
+            document.querySelectorAll('.timer-btn').forEach(b => { b.classList.remove('active'); if(b.id !== 'main-timer') b.innerText = b.getAttribute('data-orig') || b.innerText; });
+            btnElement.setAttribute('data-orig', btnElement.innerText); btnElement.classList.add('active'); let timeLeft = seconds;
+            activeTimer = setInterval(() => {
+                let m = Math.floor(timeLeft / 60); let s = timeLeft % 60;
+                btnElement.innerText = `${m}:${s.toString().padStart(2, '0')}`;
+                if (timeLeft <= 0) { clearInterval(activeTimer); btnElement.innerText = "FINE!"; btnElement.classList.remove('active'); if (navigator.vibrate) navigator.vibrate([200, 100, 200]); setTimeout(() => { btnElement.innerText = btnElement.getAttribute('data-orig'); }, 3000); }
+                timeLeft--;
+            }, 1000);
+        }
+
+        window.onload = function() { 
+            setInterval(updateClock, 1000); updateClock(); loadData(); 
+            if ('serviceWorker' in navigator) { navigator.serviceWorker.register('./sw.js').catch(err => console.log('PWA SW non registrato', err)); }
+        };
+    </script>
+</body>
+</html>

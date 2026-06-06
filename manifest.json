@@ -1,0 +1,21 @@
+{
+  "name": "Omnibus Protocol Pro",
+  "short_name": "Omnibus",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#34c759",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192/34c759/000000?text=O",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://via.placeholder.com/512/34c759/000000?text=O",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
