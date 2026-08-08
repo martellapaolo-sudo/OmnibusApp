@@ -18,7 +18,17 @@ const RATE_LIMIT_MAX_REQ   = 30;
 
 function corsHeaders(env, reqOrigin) {
   const allowed = (env.ALLOWED_ORIGIN || '').trim();
-  const origin  = (allowed && reqOrigin === allowed) ? allowed : 'null';
+
+  // If ALLOWED_ORIGIN is set, echo it back only when the origin matches.
+  // If it is not set (dev/test mode), fall back to * so the browser never
+  // receives the invalid literal string "null" that triggers Failed to fetch.
+  let origin;
+  if (allowed) {
+    origin = reqOrigin === allowed ? allowed : 'null';
+  } else {
+    origin = '*';
+  }
+
   return {
     'Access-Control-Allow-Origin':  origin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -176,9 +186,6 @@ async function handlePairInit(request, db, cors) {
       'INSERT OR IGNORE INTO devices (device_id, room_id, device_secret, device_name, created_at) VALUES (?, ?, ?, ?, ?)'
     ).bind(deviceId2, roomId, newSecret, 'Primary Device', Date.now()).run();
 
-    // Update secret for HMAC verification
-    const message = roomId + deviceId2 + timestamp + reqId + bodyStr;
-    const valid   = await verifyHMAC(message, hmacSig, newSecret);
     // For first-time registration we trust the call; no HMAC check needed
   } else {
     const message = roomId + deviceId2 + timestamp + reqId + bodyStr;
