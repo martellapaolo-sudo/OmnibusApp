@@ -21,7 +21,11 @@ window.app = {
         UIEngine.init();
 
         this.setupEventListeners();
-        
+        const syncWorkerInput = document.getElementById('sync-worker-url');
+if (syncWorkerInput) {
+    syncWorkerInput.value = SyncEngine.syncUrl;
+}
+
         // Handle URL query parameters for PWA shortcuts (?tab=...)
         const urlParams = new URLSearchParams(window.location.search);
         const targetTab = urlParams.get('tab') || 'oggi';
