@@ -189,6 +189,31 @@
                 </header>
 
                 <div class="glass-card">
+                    <div class="glass-card">
+    <div class="glass-title">☁️ Connessione Sync Cloudflare</div>
+    <p style="font-size:0.82rem; color:var(--text-sec); margin-bottom:14px;">
+        Inserisci l'URL del tuo Cloudflare Worker per abilitare sincronizzazione e pairing QR.
+    </p>
+
+    <label for="sync-worker-url" style="display:block; font-size:0.82rem; color:var(--text-sec); margin-bottom:8px;">
+        URL del Worker
+    </label>
+
+    <input
+        type="url"
+        id="sync-worker-url"
+        class="glass-input"
+        placeholder="https://nome-worker.tuo-account.workers.dev"
+        autocomplete="url"
+        inputmode="url"
+        style="margin-bottom:12px;"
+    >
+
+    <button type="button" class="glass-btn btn-pri" data-action="save-sync-worker-url">
+        Salva URL Worker
+    </button>
+</div>
+
                     <div class="glass-title">📱 Pairing QR Multi-Dispositivo (Cloudflare Worker)</div>
                     <p style="font-size:0.82rem; color:var(--text-sec); margin-bottom:14px;">Genera un codice QR monouso (valido 10 min) per associare un secondo dispositivo (iPad, Android o Mac) in sicurezza.</p>
                     <button type="button" class="glass-btn btn-pri" data-action="generate-qr-pairing">Genera Codice QR Pairing 📲</button>
