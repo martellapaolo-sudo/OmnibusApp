@@ -1,0 +1,19 @@
+name            = "omnibus-worker"
+main            = "src/index.js"
+compatibility_date = "2024-09-23"
+
+# ─── D1 Database ─────────────────────────────────────────────────────────────
+# Dopo aver eseguito: npx wrangler d1 create omnibus-db
+# Incolla qui il database_id che ti viene restituito.
+[[d1_databases]]
+binding     = "DB"
+database_name = "omnibus-db"
+database_id = "SOSTITUISCI-CON-IL-TUO-DATABASE-ID"
+
+# ─── Environment variables (non-secret) ──────────────────────────────────────
+# I secret (WORKER_MASTER_KEY, ALLOWED_ORIGIN) si impostano con:
+#   npx wrangler secret put ALLOWED_ORIGIN
+# NON metterli qui in chiaro.
+
+# ─── Workers Free tier limits ────────────────────────────────────────────────
+# 100.000 richieste/giorno, 10ms CPU/richiesta - sufficiente per uso personale.
