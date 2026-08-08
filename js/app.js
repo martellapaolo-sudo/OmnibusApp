@@ -48,9 +48,25 @@ window.app = {
                 }
             } else if (action === 'lock-app-manual') {
                 SyncEngine.lockApp();
-            } else if (action === 'generate-qr-pairing') {
-                await this.showQRPairingModal();
-            } else if (action === 'add-quick-water') {
+        } else if (action === 'save-sync-worker-url') {
+    const input = document.getElementById('sync-worker-url');
+    const url = input ? input.value.trim().replace(/\/$/, '') : '';
+
+    try {
+        const parsed = new URL(url);
+
+        if (parsed.protocol !== 'https:') {
+            throw new Error('Usa un URL HTTPS valido.');
+        }
+
+        await SyncEngine.saveSyncConfig(url);
+        UIEngine.showToast('URL Worker salvato.');
+    } catch (err) {
+        UIEngine.showToast(err.message || 'Inserisci un URL Worker valido.');
+    }
+} else if (action === 'generate-qr-pairing') {
+    await this.showQRPairingModal();
+}else if (action === 'add-quick-water') {
                 this.addWater(250);
             } else if (action === 'duplicate-yesterday-meals') {
                 const count = await NutritionEngine.duplicateYesterdayMeals();
