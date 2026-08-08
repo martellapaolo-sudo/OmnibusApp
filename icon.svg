@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#050507"/>
+      <stop offset="50%" stop-color="#0b0d14"/>
+      <stop offset="100%" stop-color="#050507"/>
+    </linearGradient>
+
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="50%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+
+    <linearGradient id="boltGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="28" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="512" height="512" rx="110" fill="url(#bgGrad)"/>
+  
+  <!-- Outer Glow Ring -->
+  <circle cx="256" cy="256" r="190" stroke="url(#shieldGrad)" stroke-width="4" fill="none" opacity="0.4" filter="url(#softGlow)"/>
+  <circle cx="256" cy="256" r="190" stroke="rgba(255,255,255,0.08)" stroke-width="2" fill="none"/>
+
+  <!-- Shield Protocol Emblem -->
+  <path d="M 256,90 L 370,140 C 370,270 290,375 256,415 C 222,375 142,270 142,140 Z" 
+        fill="url(#shieldGrad)" opacity="0.15" filter="url(#glow)"/>
+  <path d="M 256,90 L 370,140 C 370,270 290,375 256,415 C 222,375 142,270 142,140 Z" 
+        fill="none" stroke="url(#shieldGrad)" stroke-width="12" stroke-linejoin="round" />
+
+  <!-- Inner Tech Ring -->
+  <circle cx="256" cy="256" r="110" stroke="rgba(255,255,255,0.12)" stroke-width="3" stroke-dasharray="8 8" fill="none"/>
+
+  <!-- Central Lightning Bolt Icon -->
+  <path d="M 276,145 L 186,275 L 246,275 L 226,365 L 326,235 L 266,235 Z" 
+        fill="url(#boltGrad)" filter="url(#glow)"/>
+</svg>

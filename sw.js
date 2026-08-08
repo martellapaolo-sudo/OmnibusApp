@@ -1,55 +1,66 @@
-const CACHE_NAME = 'omnibus-pwa-v1';
-
-// Nota l'aggiunta di './' per coprire l'URL base della repo di GitHub
+const CACHE_NAME = 'omnibus-pwa-v8.5-secure';
 const ASSETS = [
-  './',
   './index.html',
-  './manifest.json'
+  './manifest.webmanifest',
+  './assets/styles.css',
+  './assets/icon.svg',
+  './assets/vendor/chart.umd.min.js',
+  './assets/vendor/qrcode.min.js',
+  './js/storage.js',
+  './js/crypto.js',
+  './js/sync.js',
+  './js/planner.js',
+  './js/study.js',
+  './js/training.js',
+  './js/nutrition.js',
+  './js/recovery.js',
+  './js/analytics.js',
+  './js/ui.js',
+  './js/app.js'
 ];
 
-// 1. Installazione e salvataggio iniziale
 self.addEventListener('install', event => {
-  self.skipWaiting(); // Forza l'installazione immediata del nuovo service worker
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(ASSETS);
-    })
+    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
   );
 });
 
-// 2. Attivazione e pulizia vecchie cache (utile per futuri aggiornamenti)
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(cacheNames => {
+    caches.keys().then(keys => {
       return Promise.all(
-        cacheNames.map(cache => {
-          if (cache !== CACHE_NAME) {
-            return caches.delete(cache);
-          }
-        })
+        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
-// 3. Intercettazione richieste (Network First, Fallback to Cache)
 self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url);
+
+  if (url.hostname.includes('workers.dev')) {
+    return;
+  }
+
   event.respondWith(
-    fetch(event.request)
-      .then(networkResponse => {
-        // Se la rete risponde correttamente, aggiorniamo la cache silenziosamente
-        // (clonando la risposta perché può essere consumata una sola volta)
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseToCache);
-          });
+    caches.match(event.request).then(cachedResponse => {
+      if (cachedResponse) return cachedResponse;
+
+      return fetch(event.request).then(response => {
+        if (!response || response.status !== 200 || response.type !== 'basic') {
+          return response;
         }
-        return networkResponse;
-      })
-      .catch(() => {
-        // Se siamo offline (il fetch fallisce), peschiamo dalla cache
-        return caches.match(event.request);
-      })
+        const responseToCache = response.clone();
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, responseToCache);
+        });
+        return response;
+      }).catch(() => {
+        if (event.request.headers.get('accept').includes('text/html')) {
+          return caches.match('./index.html');
+        }
+      });
+    })
   );
 });

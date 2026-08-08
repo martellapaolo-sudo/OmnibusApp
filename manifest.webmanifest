@@ -1,0 +1,45 @@
+{
+  "name": "Omnibus Protocol Pro",
+  "short_name": "Omnibus",
+  "description": "Personal Operating System per Studenti Universitari: Studio, Allenamento, Nutrizione e Recupero.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#030306",
+  "theme_color": "#030306",
+  "orientation": "any",
+  "categories": ["health", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Oggi",
+      "short_name": "Oggi",
+      "description": "Pianificazione quotidiana integrata",
+      "url": "./index.html?tab=oggi"
+    },
+    {
+      "name": "Studio & Esami",
+      "short_name": "Studio",
+      "description": "Scadenze ed avanzamento studio",
+      "url": "./index.html?tab=studio"
+    },
+    {
+      "name": "Allenamento",
+      "short_name": "Allenamento",
+      "description": "Registro schede e carichi",
+      "url": "./index.html?tab=allenamento"
+    },
+    {
+      "name": "Diario Pasti",
+      "short_name": "Nutrizione",
+      "description": "Tracciamento pasti e macro",
+      "url": "./index.html?tab=alimentazione"
+    }
+  ]
+}

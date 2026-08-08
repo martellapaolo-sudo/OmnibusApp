@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Omnibus Protocol Pro – Personal Operating System</title>
+    
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
+    <link rel="apple-touch-icon" href="./assets/icon.svg">
+    <meta name="theme-color" content="#030306">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Omnibus">
+
+    <!-- Local Standalone Vendor Libraries (Zero External CDN Dependency) -->
+    <script src="./assets/vendor/chart.umd.min.js"></script>
+    <script src="./assets/vendor/qrcode.min.js"></script>
+    
+    <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+    
+    <canvas id="particle-canvas" aria-hidden="true"></canvas>
+
+    <div class="bg-orb" id="orb-primary" aria-hidden="true"></div>
+    <div class="bg-orb" id="orb-secondary" aria-hidden="true"></div>
+    
+    <div id="toast" role="alert" aria-live="polite">
+        <span id="toast-msg">Sincronizzato</span>
+    </div>
+
+    <!-- App Lock Overlay -->
+    <div id="app-lock-overlay" class="glass-modal-overlay show" role="dialog" aria-modal="true" aria-labelledby="lock-title">
+        <div class="glass-modal" style="text-align: center;">
+            <div style="font-size: 3rem; margin-bottom: 10px;">🔒</div>
+            <h2 id="lock-title" style="font-size: 1.5rem; font-weight: 800; margin-bottom: 8px;">Omnibus Protetto</h2>
+            <p style="color: var(--text-sec); font-size: 0.88rem; margin-bottom: 20px;">Inserisci la tua passphrase personale per decifrare in memoria i tuoi dati.</p>
+            <input type="password" id="lock-passphrase-input" class="glass-input" placeholder="Passphrase personale..." style="margin-bottom: 16px; text-align: center;">
+            <button type="button" class="glass-btn btn-pri" data-action="unlock-app">Sblocca Omnibus 🔓</button>
+        </div>
+    </div>
+
+    <!-- QR Code Pairing Modal -->
+    <div id="modal-qr-pair" class="glass-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="qr-title">
+        <div class="glass-modal" style="text-align: center;">
+            <h2 id="qr-title" style="font-size: 1.3rem; font-weight: 800; margin-bottom: 12px;">📱 Pairing Multi-Dispositivo QR</h2>
+            <div id="qr-code-display" style="background:#fff; padding:16px; border-radius:16px; display:inline-block; margin-bottom:16px;"></div>
+            <div id="qr-token-text" style="font-family:'JetBrains Mono'; font-size:0.8rem; color:var(--text-sec); margin-bottom:16px;">...</div>
+            <button type="button" class="glass-btn" data-action="close-modal" data-target="modal-qr-pair">Chiudi</button>
+        </div>
+    </div>
+
+    <div class="app-layout">
+        
+        <!-- Sidebar Navigation (Desktop & iPad Landscape) -->
+        <aside class="sidebar-nav" aria-label="Navigazione principale">
+            <div>
+                <div class="sidebar-brand">
+                    <svg viewBox="0 0 512 512" fill="none" aria-hidden="true"><rect width="512" height="512" rx="100" fill="#030306"/><circle cx="256" cy="256" r="180" stroke="#00f59b" stroke-width="8" opacity="0.35"/><path d="M 256,90 L 370,140 C 370,270 290,375 256,415 C 222,375 142,270 142,140 Z" stroke="#00f59b" stroke-width="14" fill="none"/><path d="M 276,145 L 186,275 L 246,275 L 226,365 L 326,235 L 266,235 Z" fill="#00f59b"/></svg>
+                    <div>
+                        <div class="sidebar-brand-title">Omnibus Pro</div>
+                        <div class="sidebar-brand-sub">Operating System</div>
+                    </div>
+                </div>
+
+                <nav class="sidebar-menu">
+                    <button type="button" class="sidebar-btn active" data-action="switch-tab" data-tab="oggi">
+                        <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Oggi
+                    </button>
+                    <button type="button" class="sidebar-btn" data-action="switch-tab" data-tab="studio">
+                        <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg> Studio & Esami
+                    </button>
+                    <button type="button" class="sidebar-btn" data-action="switch-tab" data-tab="allenamento">
+                        <svg viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path></svg> Allenamento
+                    </button>
+                    <button type="button" class="sidebar-btn" data-action="switch-tab" data-tab="alimentazione">
+                        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7 6 13 6 13s6-6 6-13z"></path><circle cx="12" cy="9" r="2"></circle></svg> Alimentazione
+                    </button>
+                    <button type="button" class="sidebar-btn" data-action="switch-tab" data-tab="storico">
+                        <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> Storico
+                    </button>
+                    <button type="button" class="sidebar-btn" data-action="switch-tab" data-tab="impostazioni">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg> Impostazioni
+                    </button>
+                </nav>
+            </div>
+
+            <div>
+                <button type="button" class="glass-btn" style="margin-bottom: 12px; font-size: 0.8rem;" data-action="lock-app-manual">🔒 Blocca Omnibus</button>
+                <div class="sync-badge-pill" data-action="open-modal" data-target="modal-sync">
+                    <span class="sync-dot"></span> <span id="sidebar-sync-text">Sync Status</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- TAB 1: OGGI -->
+            <section id="tab-oggi" class="tab-content active">
+                <header class="hud-header" style="margin-bottom: 24px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                        <div class="hud-time" style="font-family: 'JetBrains Mono', monospace; font-size: 3rem; font-weight: 800;"><span id="clock">00:00</span></div>
+                        <div class="sync-badge-pill" data-action="open-modal" data-target="modal-sync">
+                            <span class="sync-dot"></span> <span id="top-sync-text">Sync Off</span>
+                        </div>
+                    </div>
+                    <div class="hud-date" id="date-display" style="font-size: 0.85rem; color: var(--text-sec); font-weight: 800; text-transform: uppercase;">...</div>
+                </header>
+
+                <div class="action-bar">
+                    <button type="button" class="action-chip" data-action="switch-tab" data-tab="studio">📚 Studio</button>
+                    <button type="button" class="action-chip" data-action="switch-tab" data-tab="allenamento">🏋️‍♂️ Allenamento</button>
+                    <button type="button" class="action-chip" data-action="log-meal-quick">🥗 Pasto</button>
+                    <button type="button" class="action-chip" data-action="duplicate-yesterday-meals">🔄 Copia Pasti Ieri</button>
+                    <button type="button" class="action-chip" data-action="add-quick-water">💧 +250ml</button>
+                    <button type="button" class="action-chip" data-action="quick-active-recovery">🧘‍♂️ Recupero Attivo</button>
+                </div>
+
+                <div id="oggi-exam-countdown"></div>
+                <div id="oggi-suggestions-zone"></div>
+
+                <div class="glass-card" style="margin-top: 16px;">
+                    <div class="glass-title">🥗 Sintesi Nutrizione Odierna</div>
+                    <div id="oggi-macro-summary"></div>
+                </div>
+            </section>
+
+            <!-- TAB 2: STUDIO & ESAMI -->
+            <section id="tab-studio" class="tab-content">
+                <header style="margin-bottom: 24px;">
+                    <h1 style="font-size: 2rem; font-weight: 800;">Studio & Esami</h1>
+                    <p style="color: var(--text-sec); font-size: 0.88rem;">Pianificazione gerarchica, moduli e ripassi dilazionati.</p>
+                </header>
+
+                <div id="studio-backlog-badge" style="margin-bottom:16px;"></div>
+
+                <div class="glass-card">
+                    <div class="glass-title">📚 Elenco Esami in Programma</div>
+                    <div id="studio-exams-list"></div>
+                </div>
+            </section>
+
+            <!-- TAB 3: ALLENAMENTO -->
+            <section id="tab-allenamento" class="tab-content">
+                <header style="margin-bottom: 24px;">
+                    <h1 style="font-size: 2rem; font-weight: 800;">Allenamento & Movimento</h1>
+                    <p style="color: var(--text-sec); font-size: 0.88rem;">Schede, carichi, serie, RPE e recupero attivo.</p>
+                </header>
+
+                <div class="glass-card">
+                    <div class="glass-title">🏋️‍♂️ Allenamenti Registrati</div>
+                    <div id="allenamento-list"></div>
+                </div>
+            </section>
+
+            <!-- TAB 4: ALIMENTAZIONE -->
+            <section id="tab-alimentazione" class="tab-content">
+                <header style="margin-bottom: 24px;">
+                    <h1 style="font-size: 2rem; font-weight: 800;">Alimentazione & Idratazione</h1>
+                    <p style="color: var(--text-sec); font-size: 0.88rem;">Diario pasti, macro, alimenti e scanner IA.</p>
+                </header>
+
+                <div class="glass-card">
+                    <div class="glass-title">🍽️ Pasti della Giornata</div>
+                    <div id="nutrition-meals-list"></div>
+                </div>
+            </section>
+
+            <!-- TAB 5: STORICO -->
+            <section id="tab-storico" class="tab-content">
+                <header style="margin-bottom: 24px;">
+                    <h1 style="font-size: 2rem; font-weight: 800;">Storico & Trend</h1>
+                    <p style="color: var(--text-sec); font-size: 0.88rem;">Statistiche pratiche e correlazioni tra i pilastri.</p>
+                </header>
+
+                <div class="glass-card">
+                    <div class="glass-title">📈 Andamento 30 Giorni</div>
+                    <div style="height: 280px; width: 100%;"><canvas id="analyticsChart"></canvas></div>
+                </div>
+            </section>
+
+            <!-- TAB 6: IMPOSTAZIONI -->
+            <section id="tab-impostazioni" class="tab-content">
+                <header style="margin-bottom: 24px;">
+                    <h1 style="font-size: 2rem; font-weight: 800;">Impostazioni Globali</h1>
+                    <p style="color: var(--text-sec); font-size: 0.88rem;">Pairing multi-dispositivo, backup, privacy e preferenze.</p>
+                </header>
+
+                <div class="glass-card">
+                    <div class="glass-title">📱 Pairing QR Multi-Dispositivo (Cloudflare Worker)</div>
+                    <p style="font-size:0.82rem; color:var(--text-sec); margin-bottom:14px;">Genera un codice QR monouso (valido 10 min) per associare un secondo dispositivo (iPad, Android o Mac) in sicurezza.</p>
+                    <button type="button" class="glass-btn btn-pri" data-action="generate-qr-pairing">Genera Codice QR Pairing 📲</button>
+                </div>
+
+                <div class="glass-card">
+                    <div class="glass-title">🔒 Passphrase in Memoria & Sicurezza</div>
+                    <p style="font-size: 0.82rem; color: var(--text-sec); margin-bottom: 14px;">La tua passphrase viene tenuta ESCLUSIVAMENTE nella RAM del browser finché l'app rimane aperta.</p>
+                    <button type="button" class="glass-btn" data-action="lock-app-manual">Blocca Omnibus Adesso 🔒</button>
+                </div>
+
+                <div class="glass-card">
+                    <div class="glass-title">💾 Backup & Ripristino Dati</div>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <button type="button" class="glass-btn btn-pri" style="flex:1" data-action="export-json">Esporta Backup JSON 📦</button>
+                        <button type="button" class="glass-btn" style="flex:1" data-action="import-json">Ripristina Backup JSON 📥</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <nav class="bottom-nav" aria-label="Navigazione mobile">
+        <button type="button" class="nav-item active" data-action="switch-tab" data-tab="oggi">
+            <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>Oggi
+        </button>
+        <button type="button" class="nav-item" data-action="switch-tab" data-tab="studio">
+            <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>Studio
+        </button>
+        <button type="button" class="nav-item" data-action="switch-tab" data-tab="allenamento">
+            <svg viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path></svg>Fit
+        </button>
+        <button type="button" class="nav-item" data-action="switch-tab" data-tab="alimentazione">
+            <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7 6 13 6 13s6-6 6-13z"></path><circle cx="12" cy="9" r="2"></circle></svg>Dieta
+        </button>
+        <button type="button" class="nav-item" data-action="switch-tab" data-tab="storico">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>Trend
+        </button>
+        <button type="button" class="nav-item" data-action="switch-tab" data-tab="impostazioni">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>Setup
+        </button>
+    </nav>
+
+    <script src="./js/storage.js"></script>
+    <script src="./js/crypto.js"></script>
+    <script src="./js/sync.js"></script>
+    <script src="./js/planner.js"></script>
+    <script src="./js/study.js"></script>
+    <script src="./js/training.js"></script>
+    <script src="./js/nutrition.js"></script>
+    <script src="./js/recovery.js"></script>
+    <script src="./js/analytics.js"></script>
+    <script src="./js/ui.js"></script>
+    <script src="./js/app.js"></script>
+</body>
+</html>
