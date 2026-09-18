@@ -8,12 +8,12 @@
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
     <link rel="apple-touch-icon" href="./assets/icon.svg">
-    <meta name="theme-color" content="#030306">
+    <meta name="theme-color" content="#08090d">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Omnibus">
 
-    <!-- Local Standalone Vendor Libraries (Zero External CDN Dependency) -->
+    <!-- Standalone Local Vendor Libraries (Zero External CDN Dependency) -->
     <script src="./assets/vendor/chart.umd.min.js"></script>
     <script src="./assets/vendor/qrcode.min.js"></script>
     
@@ -30,24 +30,320 @@
         <span id="toast-msg">Sincronizzato</span>
     </div>
 
-    <!-- App Lock Overlay -->
-    <div id="app-lock-overlay" class="glass-modal-overlay show" role="dialog" aria-modal="true" aria-labelledby="lock-title">
-        <div class="glass-modal" style="text-align: center;">
-            <div style="font-size: 3rem; margin-bottom: 10px;">🔒</div>
-            <h2 id="lock-title" style="font-size: 1.5rem; font-weight: 800; margin-bottom: 8px;">Omnibus Protetto</h2>
-            <p style="color: var(--text-sec); font-size: 0.88rem; margin-bottom: 20px;">Inserisci la tua passphrase personale per decifrare in memoria i tuoi dati.</p>
-            <input type="password" id="lock-passphrase-input" class="glass-input" placeholder="Passphrase personale..." style="margin-bottom: 16px; text-align: center;">
-            <button type="button" class="glass-btn btn-pri" data-action="unlock-app">Sblocca Omnibus 🔓</button>
+    <!-- App Lock Modal (Only shows when manually locked) -->
+    <div id="app-lock-overlay" class="glass-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="lock-title">
+        <div class="glass-modal" style="text-align: center; max-width: 420px;">
+            <div style="font-size: 3rem; margin-bottom: 12px;">🔒</div>
+            <h2 id="lock-title" style="font-size: 1.4rem; font-weight: 800; margin-bottom: 8px;">Omnibus Bloccato</h2>
+            <p style="color: var(--text-sec); font-size: 0.88rem; margin-bottom: 20px;">Inserisci la tua passphrase personale per sbloccare la sessione in memoria.</p>
+            <input type="password" id="lock-passphrase-input" class="glass-input" placeholder="Passphrase..." style="margin-bottom: 16px; text-align: center;">
+            <button type="button" class="glass-btn btn-pri" data-action="unlock-app">Sblocca Sessione 🔓</button>
         </div>
     </div>
 
     <!-- QR Code Pairing Modal -->
     <div id="modal-qr-pair" class="glass-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="qr-title">
+        <div class="glass-modal" style="text-align: center; max-width: 480px;">
+            <div class="modal-header">
+                <h2 id="qr-title" class="modal-title">📱 Associazione Dispositivi</h2>
+                <button type="button" class="modal-close-btn" data-action="close-modal" data-target="modal-qr-pair">&times;</button>
+            </div>
+            <p style="font-size:0.85rem; color:var(--text-sec); margin-bottom:16px;">
+                Inquadra il QR con un altro dispositivo oppure copia il codice rapido per sincronizzare tutto istantaneamente:
+            </p>
+            <div id="qr-code-display" style="background:#fff; padding:12px; border-radius:16px; display:inline-flex; align-items:center; justify-content:center; margin-bottom:16px;"></div>
+            <div style="background: var(--surface-hover); border: 1px solid var(--border-glass); border-radius: 12px; padding: 12px; margin-bottom: 16px; text-align: left;">
+                <label style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-sec); display: block; margin-bottom: 4px;">Codice Pairing Rapido</label>
+                <div id="qr-token-text" style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:var(--text-pri); word-break: break-all; max-height: 80px; overflow-y: auto; user-select: all;">...</div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button type="button" class="glass-btn btn-pri" style="flex:1;" data-action="copy-pairing-bundle">📋 Copia Codice</button>
+                <button type="button" class="glass-btn" style="flex:1;" data-action="close-modal" data-target="modal-qr-pair">Chiudi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: NUOVO ESAME -->
+    <div id="modal-exam" class="glass-modal-overlay" role="dialog" aria-modal="true">
+        <div class="glass-modal">
+            <div class="modal-header">
+                <h2 class="modal-title">📚 Aggiungi Nuovo Esame</h2>
+                <button type="button" class="modal-close-btn" data-action="close-modal" data-target="modal-exam">&times;</button>
+            </div>
+            <form id="form-exam">
+                <div class="form-group">
+                    <label class="form-label">Nome Insegnamento / Esame</label>
+                    <input type="text" id="exam-name-input" class="glass-input" placeholder="es. Anatomia Umana, Diritto Privato, Analisi 2..." required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Data Appello</label>
+                        <input type="date" id="exam-date-input" class="glass-input" required>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Ore Target Stimate</label>
+                        <input type="number" id="exam-hours-input" class="glass-input" value="45" min="5" step="5">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Note / CFU / Tipologia Prova</label>
+                    <input type="text" id="exam-notes-input" class="glass-input" placeholder="es. 9 CFU - Scritto + Orale">
+                </div>
+                <button type="submit" class="glass-btn btn-pri" style="margin-top: 10px;">Salva Esame nel Piano 🎓</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: POMODORO & SESSIONE STUDIO -->
+    <div id="modal-pomodoro" class="glass-modal-overlay" role="dialog" aria-modal="true">
         <div class="glass-modal" style="text-align: center;">
-            <h2 id="qr-title" style="font-size: 1.3rem; font-weight: 800; margin-bottom: 12px;">📱 Pairing Multi-Dispositivo QR</h2>
-            <div id="qr-code-display" style="background:#fff; padding:16px; border-radius:16px; display:inline-block; margin-bottom:16px;"></div>
-            <div id="qr-token-text" style="font-family:'JetBrains Mono'; font-size:0.8rem; color:var(--text-sec); margin-bottom:16px;">...</div>
-            <button type="button" class="glass-btn" data-action="close-modal" data-target="modal-qr-pair">Chiudi</button>
+            <div class="modal-header">
+                <h2 class="modal-title">⏱️ Sessione Studio & Pomodoro</h2>
+                <button type="button" class="modal-close-btn" data-action="close-modal" data-target="modal-pomodoro">&times;</button>
+            </div>
+            <div class="timer-display" id="pomodoro-timer-digits">25:00</div>
+            <div class="timer-controls" style="margin-bottom: 24px;">
+                <button type="button" class="glass-btn btn-pri btn-sm" id="pomodoro-btn-toggle" data-action="toggle-pomodoro">▶️ Avvia</button>
+                <button type="button" class="glass-btn btn-sm" data-action="reset-pomodoro">🔄 Reset</button>
+                <button type="button" class="action-chip" data-action="set-pomodoro-time" data-mins="25">25m</button>
+                <button type="button" class="action-chip" data-action="set-pomodoro-time" data-mins="50">50m</button>
+                <button type="button" class="action-chip" data-action="set-pomodoro-time" data-mins="15">15m</button>
+            </div>
+            <div class="form-group" style="text-align: left;">
+                <label class="form-label">Argomento / Esame</label>
+                <input type="text" id="pomodoro-topic-input" class="glass-input" placeholder="es. Fisiologia - Ciclo di Krebs">
+            </div>
+            <div class="form-group" style="text-align: left;">
+                <label class="form-label">Metodologia di Studio</label>
+                <select id="pomodoro-method-select" class="glass-select">
+                    <option value="Ripasso Attivo">🧠 Ripasso Attivo (Active Recall)</option>
+                    <option value="Lettura & Sintesi">📖 Lettura & Sintesi Concettuale</option>
+                    <option value="Esercizi & Quiz">✍️ Esercizi & Problem Solving</option>
+                    <option value="Flashcards">⚡ Flashcards Spaced Repetition</option>
+                </select>
+            </div>
+            <div class="form-group" style="text-align: left;">
+                <label class="form-label">Valutazione Padronanza</label>
+                <select id="pomodoro-outcome-select" class="glass-select">
+                    <option value="non_valutato">⚪ Prima Lettura / Non Valutato</option>
+                    <option value="weak">🔴 Debole (ripasso dopo 1 giorno)</option>
+                    <option value="medium" selected>🟡 Medio (ripasso dopo 3-4 giorni)</option>
+                    <option value="solid">🟢 Solido (ripasso dopo 7-14 giorni)</option>
+                </select>
+            </div>
+            <button type="button" class="glass-btn btn-pri" data-action="finish-study-session">Concludi & Registra Sessione 🏁</button>
+        </div>
+    </div>
+
+    <!-- MODAL: REGISTRA WORKOUT -->
+    <div id="modal-workout" class="glass-modal-overlay" role="dialog" aria-modal="true">
+        <div class="glass-modal">
+            <div class="modal-header">
+                <h2 class="modal-title">🏋️‍♂️ Registra Allenamento</h2>
+                <button type="button" class="modal-close-btn" data-action="close-modal" data-target="modal-workout">&times;</button>
+            </div>
+            <form id="form-workout">
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Disciplina / Tipo</label>
+                        <select id="workout-type-input" class="glass-select">
+                            <option value="forza">🏋️ Forza / Pesi</option>
+                            <option value="corsa">🏃 Corsa / Running</option>
+                            <option value="cardio">🚴 Cardio / HIIT</option>
+                            <option value="mobilita">🧘 Mobilità & Stretching</option>
+                            <option value="recupero_attivo">🚶 Camminata / Scarico</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Durata (min)</label>
+                        <input type="number" id="workout-duration-input" class="glass-input" value="60" min="10" step="5">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Intensità RPE (1-10)</label>
+                        <select id="workout-rpe-input" class="glass-select">
+                            <option value="5">5 - Molto Leggero</option>
+                            <option value="6">6 - Moderato</option>
+                            <option value="7">7 - Sforzo Medio</option>
+                            <option value="8" selected>8 - Intenso (2 RIR)</option>
+                            <option value="9">9 - Quasi al Limite</option>
+                            <option value="10">10 - Massimale</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Stato Sessione</label>
+                        <select id="workout-status-input" class="glass-select">
+                            <option value="svolto" selected>✅ Svolto</option>
+                            <option value="pianificato">📅 Pianificato</option>
+                            <option value="saltato">❌ Saltato</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Esercizi, Serie e Carichi</label>
+                    <textarea id="workout-exercises-input" class="glass-textarea" placeholder="es: Panca Piana 4x8 @ 75kg&#10;Trazioni 4x6 @ +10kg&#10;Military Press 3x10 @ 40kg"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Note / Sensazioni</label>
+                    <input type="text" id="workout-notes-input" class="glass-input" placeholder="es. Spinta ottima, focus sulle pause">
+                </div>
+                <button type="submit" class="glass-btn btn-pri" style="margin-top: 10px;">Salva Workout nel Registro 💪</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: REGISTRA PASTO & SCANNER IA -->
+    <div id="modal-meal" class="glass-modal-overlay" role="dialog" aria-modal="true">
+        <div class="glass-modal">
+            <div class="modal-header">
+                <h2 class="modal-title">🥗 Registra Pasto</h2>
+                <button type="button" class="modal-close-btn" data-action="close-modal" data-target="modal-meal">&times;</button>
+            </div>
+            
+            <div class="modal-tabs">
+                <button type="button" class="modal-tab-btn active" id="tab-btn-meal-manual" data-action="toggle-meal-tab" data-tab="manual">✏️ Inserimento Diretto</button>
+                <button type="button" class="modal-tab-btn" id="tab-btn-meal-ai" data-action="toggle-meal-tab" data-tab="ai">🤖 Stima con IA Gemini</button>
+            </div>
+
+            <!-- TAB IA -->
+            <div id="meal-tab-ai" style="display: none; margin-bottom: 18px;">
+                <p style="font-size: 0.82rem; color: var(--text-sec); margin-bottom: 8px;">Descrivi liberamente gli alimenti consumati in linguaggio naturale:</p>
+                <textarea id="meal-ai-desc-input" class="glass-textarea" placeholder="es. 100g di riso basmati, 180g di petto di pollo ai ferri, un cucchiaio d'olio evo e zucchine grigliate..."></textarea>
+                <button type="button" class="glass-btn btn-pri btn-sm" id="meal-btn-ai-analyze" data-action="analyze-meal-ai" style="margin-top: 10px;">✨ Analizza con IA</button>
+            </div>
+
+            <!-- FORM PASTO -->
+            <form id="form-meal">
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Momento / Tipo</label>
+                        <select id="meal-type-input" class="glass-select">
+                            <option value="Colazione">🍳 Colazione</option>
+                            <option value="Pranzo" selected>🥗 Pranzo</option>
+                            <option value="Cena">🍲 Cena</option>
+                            <option value="Spuntino">🍎 Spuntino</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Calorie (kcal)</label>
+                        <input type="number" id="meal-kcal-input" class="glass-input" placeholder="es. 650" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Proteine (g)</label>
+                        <input type="number" id="meal-pro-input" class="glass-input" placeholder="es. 45" required>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Carboidrati (g)</label>
+                        <input type="number" id="meal-cho-input" class="glass-input" placeholder="es. 80" required>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Grassi (g)</label>
+                        <input type="number" id="meal-fat-input" class="glass-input" placeholder="es. 14" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Descrizione / Alimenti</label>
+                    <input type="text" id="meal-notes-input" class="glass-input" placeholder="es. Riso basmati, pollo, olio EVO">
+                </div>
+                <input type="hidden" id="meal-quality-input" value="manuale">
+                <button type="submit" class="glass-btn btn-pri" style="margin-top: 10px;">Salva Pasto nel Diario 🥗</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: REGISTRA SONNO & RECUPERO -->
+    <div id="modal-recovery" class="glass-modal-overlay" role="dialog" aria-modal="true">
+        <div class="glass-modal">
+            <div class="modal-header">
+                <h2 class="modal-title">🛌 Registra Sonno & Recupero</h2>
+                <button type="button" class="modal-close-btn" data-action="close-modal" data-target="modal-recovery">&times;</button>
+            </div>
+            <form id="form-recovery">
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Ore di Sonno Effettive</label>
+                        <input type="number" id="recovery-hours-input" class="glass-input" value="7.5" min="3" max="14" step="0.5" required>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Qualità Percepita</label>
+                        <select id="recovery-quality-input" class="glass-select">
+                            <option value="5">⭐⭐⭐⭐⭐ Ottimo (Profondo)</option>
+                            <option value="4" selected>⭐⭐⭐⭐ Buono</option>
+                            <option value="3">⭐⭐⭐ Normale</option>
+                            <option value="2">⭐⭐ Disturbato</option>
+                            <option value="1">⭐ Insufficiente</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Livello Energia (1-5)</label>
+                        <select id="recovery-energy-input" class="glass-select">
+                            <option value="5">⚡ 5/5 Massima</option>
+                            <option value="4" selected>🔋 4/5 Alta</option>
+                            <option value="3">⚡ 3/5 Moderata</option>
+                            <option value="2">🪫 2/5 Bassa</option>
+                            <option value="1">⚠️ 1/5 Esausto</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Livello Stress (1-5)</label>
+                        <select id="recovery-stress-input" class="glass-select">
+                            <option value="1">😌 1/5 Rilassato</option>
+                            <option value="2" selected>🙂 2/5 Basso</option>
+                            <option value="3">😐 3/5 Moderato</option>
+                            <option value="4">😰 4/5 Elevato</option>
+                            <option value="5">🚨 5/5 Critico</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Note di Rigenerazione</label>
+                    <input type="text" id="recovery-notes-input" class="glass-input" placeholder="es. Addormentato rapidamente, mente lucida">
+                </div>
+                <button type="submit" class="glass-btn btn-pri" style="margin-top: 10px;">Salva Parametri Rigenerazione 🛌</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: AGGIUNGI TASK DAILY PLAN -->
+    <div id="modal-daily-task" class="glass-modal-overlay" role="dialog" aria-modal="true">
+        <div class="glass-modal">
+            <div class="modal-header">
+                <h2 class="modal-title">➕ Nuova Attività del Giorno</h2>
+                <button type="button" class="modal-close-btn" data-action="close-modal" data-target="modal-daily-task">&times;</button>
+            </div>
+            <form id="form-daily-task">
+                <div class="form-group">
+                    <label class="form-label">Descrizione Attività</label>
+                    <input type="text" id="daily-task-title-input" class="glass-input" placeholder="es. Ripasso Fisiologia (Cap. 3), Workout Panca..." required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Pilastro</label>
+                        <select id="daily-task-pillar-input" class="glass-select">
+                            <option value="study">📚 Studio & Esami</option>
+                            <option value="training">🏋️ Allenamento & Movimento</option>
+                            <option value="nutrition">🥗 Alimentazione & Idratazione</option>
+                            <option value="recovery">🛌 Sonno & Recupero</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Momento</label>
+                        <select id="daily-task-slot-input" class="glass-select">
+                            <option value="mattino">🌅 Mattino</option>
+                            <option value="pomeriggio">☀️ Pomeriggio</option>
+                            <option value="sera">🌙 Sera</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="glass-btn btn-pri" style="margin-top: 10px;">Aggiungi al Piano Odierno 🎯</button>
+            </form>
         </div>
     </div>
 
@@ -57,7 +353,7 @@
         <aside class="sidebar-nav" aria-label="Navigazione principale">
             <div>
                 <div class="sidebar-brand">
-                    <svg viewBox="0 0 512 512" fill="none" aria-hidden="true"><rect width="512" height="512" rx="100" fill="#030306"/><circle cx="256" cy="256" r="180" stroke="#00f59b" stroke-width="8" opacity="0.35"/><path d="M 256,90 L 370,140 C 370,270 290,375 256,415 C 222,375 142,270 142,140 Z" stroke="#00f59b" stroke-width="14" fill="none"/><path d="M 276,145 L 186,275 L 246,275 L 226,365 L 326,235 L 266,235 Z" fill="#00f59b"/></svg>
+                    <svg viewBox="0 0 512 512" fill="none" aria-hidden="true"><rect width="512" height="512" rx="100" fill="#0c0e16"/><circle cx="256" cy="256" r="180" stroke="#10b981" stroke-width="8" opacity="0.4"/><path d="M 256,90 L 370,140 C 370,270 290,375 256,415 C 222,375 142,270 142,140 Z" stroke="#10b981" stroke-width="14" fill="none"/><path d="M 276,145 L 186,275 L 246,275 L 226,365 L 326,235 L 266,235 Z" fill="#10b981"/></svg>
                     <div>
                         <div class="sidebar-brand-title">Omnibus Pro</div>
                         <div class="sidebar-brand-sub">Operating System</div>
@@ -88,8 +384,8 @@
 
             <div>
                 <button type="button" class="glass-btn" style="margin-bottom: 12px; font-size: 0.8rem;" data-action="lock-app-manual">🔒 Blocca Omnibus</button>
-                <div class="sync-badge-pill" data-action="open-modal" data-target="modal-sync">
-                    <span class="sync-dot"></span> <span id="sidebar-sync-text">Sync Status</span>
+                <div class="sync-badge-pill" data-action="switch-tab" data-tab="impostazioni">
+                    <span class="sync-dot"></span> <span id="sidebar-sync-text">Sync Locale</span>
                 </div>
             </div>
         </aside>
@@ -97,73 +393,188 @@
         <!-- Main Content Area -->
         <main class="main-content">
             
-            <!-- TAB 1: OGGI -->
+            <!-- TAB 1: OGGI (COMMAND CENTER) -->
             <section id="tab-oggi" class="tab-content active">
-                <header class="hud-header" style="margin-bottom: 24px;">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-                        <div class="hud-time" style="font-family: 'JetBrains Mono', monospace; font-size: 3rem; font-weight: 800;"><span id="clock">00:00</span></div>
-                        <div class="sync-badge-pill" data-action="open-modal" data-target="modal-sync">
-                            <span class="sync-dot"></span> <span id="top-sync-text">Sync Off</span>
+                <header style="margin-bottom: 24px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+                        <div>
+                            <div style="font-size: 0.82rem; font-weight: 800; color: var(--text-sec); text-transform: uppercase; letter-spacing: 1px;" id="date-display">...</div>
+                            <h1 style="font-size: 2.2rem; font-weight: 800; letter-spacing: -1px;">Bentornato, Paolo ⚡</h1>
+                        </div>
+                        <div class="sync-badge-pill" data-action="switch-tab" data-tab="impostazioni">
+                            <span class="sync-dot"></span> <span id="top-sync-text">Sync Locale</span>
                         </div>
                     </div>
-                    <div class="hud-date" id="date-display" style="font-size: 0.85rem; color: var(--text-sec); font-weight: 800; text-transform: uppercase;">...</div>
+                    <div style="display: inline-flex; align-items: center; gap: 8px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 700; color: #34d399;">
+                        <span>🔋 88% Prontezza</span> • <span>Recupero Ottimale per Studio & Workout</span>
+                    </div>
                 </header>
 
+                <!-- Quick Action Bar -->
                 <div class="action-bar">
-                    <button type="button" class="action-chip" data-action="switch-tab" data-tab="studio">📚 Studio</button>
-                    <button type="button" class="action-chip" data-action="switch-tab" data-tab="allenamento">🏋️‍♂️ Allenamento</button>
-                    <button type="button" class="action-chip" data-action="log-meal-quick">🥗 Pasto</button>
-                    <button type="button" class="action-chip" data-action="duplicate-yesterday-meals">🔄 Copia Pasti Ieri</button>
+                    <button type="button" class="action-chip chip-pri" data-action="open-modal" data-target="modal-pomodoro">⏱️ Pomodoro Studio</button>
+                    <button type="button" class="action-chip" data-action="open-modal" data-target="modal-workout">🏋️‍♂️ Workout</button>
+                    <button type="button" class="action-chip" data-action="open-modal" data-target="modal-meal">🥗 Pasto</button>
+                    <button type="button" class="action-chip" data-action="open-modal" data-target="modal-recovery">🛌 Sonno & Recupero</button>
                     <button type="button" class="action-chip" data-action="add-quick-water">💧 +250ml</button>
+                    <button type="button" class="action-chip" data-action="duplicate-yesterday-meals">🔄 Copia Ieri</button>
                     <button type="button" class="action-chip" data-action="quick-active-recovery">🧘‍♂️ Recupero Attivo</button>
                 </div>
 
+                <!-- 4 Pillars Hero KPI Cards -->
+                <div class="kpi-grid">
+                    <div class="kpi-card" style="border-left: 3px solid var(--pillar-study);">
+                        <div class="kpi-header">
+                            <span class="kpi-title">📚 Studio</span>
+                            <span class="pillar-tag tag-study">Oggi</span>
+                        </div>
+                        <div class="kpi-value" id="kpi-val-study">2.5h</div>
+                        <div class="kpi-sub">Target: 4.0h • 2 Ripassi</div>
+                    </div>
+                    <div class="kpi-card" style="border-left: 3px solid var(--pillar-training);">
+                        <div class="kpi-header">
+                            <span class="kpi-title">🏋️ Allenamento</span>
+                            <span class="pillar-tag tag-training">Forza</span>
+                        </div>
+                        <div class="kpi-value" id="kpi-val-workout">55m</div>
+                        <div class="kpi-sub">RPE 8 • Volume 4.2k kg</div>
+                    </div>
+                    <div class="kpi-card" style="border-left: 3px solid var(--pillar-nutrition);">
+                        <div class="kpi-header">
+                            <span class="kpi-title">🥗 Nutrizione</span>
+                            <span class="pillar-tag tag-nutrition">Calorie</span>
+                        </div>
+                        <div class="kpi-value" id="kpi-val-nutrition">1,850</div>
+                        <div class="kpi-sub">Goal: 2,400 kcal (P: 140g)</div>
+                    </div>
+                    <div class="kpi-card" style="border-left: 3px solid var(--pillar-recovery);">
+                        <div class="kpi-header">
+                            <span class="kpi-title">🛌 Sonno</span>
+                            <span class="pillar-tag tag-recovery">Recupero</span>
+                        </div>
+                        <div class="kpi-value" id="kpi-val-recovery">7.5h</div>
+                        <div class="kpi-sub">Qualità 4/5 • Stress Basso</div>
+                    </div>
+                </div>
+
+                <!-- Exam Countdown Radar Banner -->
                 <div id="oggi-exam-countdown"></div>
+
+                <!-- Contextual Readiness Suggestions -->
                 <div id="oggi-suggestions-zone"></div>
 
-                <div class="glass-card" style="margin-top: 16px;">
-                    <div class="glass-title">🥗 Sintesi Nutrizione Odierna</div>
+                <!-- Daily Plan Interactive Checklist -->
+                <div class="pro-card">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">🎯 Piano & Obiettivi del Giorno</span>
+                        <button type="button" class="glass-btn btn-sm" data-action="open-modal" data-target="modal-daily-task">➕ Aggiungi Task</button>
+                    </div>
+                    <div id="oggi-daily-tasks-list"></div>
+                </div>
+
+                <!-- Daily Nutrition & Hydration Breakdown -->
+                <div class="pro-card">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">🥗 Sintesi Nutrizionale & Idratazione</span>
+                        <button type="button" class="glass-btn btn-sm" data-action="open-modal" data-target="modal-meal">➕ Registra Pasto</button>
+                    </div>
                     <div id="oggi-macro-summary"></div>
                 </div>
             </section>
 
             <!-- TAB 2: STUDIO & ESAMI -->
             <section id="tab-studio" class="tab-content">
-                <header style="margin-bottom: 24px;">
-                    <h1 style="font-size: 2rem; font-weight: 800;">Studio & Esami</h1>
-                    <p style="color: var(--text-sec); font-size: 0.88rem;">Pianificazione gerarchica, moduli e ripassi dilazionati.</p>
+                <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h1 style="font-size: 2rem; font-weight: 800; letter-spacing: -0.5px;">Studio & Esami</h1>
+                        <p style="color: var(--text-sec); font-size: 0.88rem;">Pianificazione accademica, moduli e ripassi dilazionati.</p>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="glass-btn btn-pri btn-sm" data-action="open-modal" data-target="modal-pomodoro">⏱️ Timer Pomodoro</button>
+                        <button type="button" class="glass-btn btn-study btn-sm" data-action="open-modal" data-target="modal-exam">➕ Nuovo Esame</button>
+                    </div>
                 </header>
 
-                <div id="studio-backlog-badge" style="margin-bottom:16px;"></div>
+                <!-- Pomodoro Live Widget Card -->
+                <div class="pomodoro-box">
+                    <div style="font-size: 0.8rem; font-weight: 800; text-transform: uppercase; color: var(--pillar-study); letter-spacing: 1.5px;">⏱️ Timer Studio Live</div>
+                    <div class="timer-display" id="studio-pomodoro-timer-digits">25:00</div>
+                    <div class="timer-controls">
+                        <button type="button" class="glass-btn btn-pri btn-sm" id="studio-pomodoro-btn-toggle" data-action="toggle-pomodoro">▶️ Avvia</button>
+                        <button type="button" class="glass-btn btn-sm" data-action="reset-pomodoro">🔄 Reset</button>
+                        <button type="button" class="glass-btn btn-sm" data-action="open-modal" data-target="modal-pomodoro">⚙️ Configura</button>
+                    </div>
+                </div>
 
-                <div class="glass-card">
-                    <div class="glass-title">📚 Elenco Esami in Programma</div>
+                <div id="studio-backlog-badge" style="margin-bottom:18px;"></div>
+
+                <div class="pro-card">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">📚 Esami nel Piano di Studi</span>
+                        <button type="button" class="glass-btn btn-sm" data-action="open-modal" data-target="modal-exam">➕ Aggiungi Esame</button>
+                    </div>
                     <div id="studio-exams-list"></div>
                 </div>
             </section>
 
             <!-- TAB 3: ALLENAMENTO -->
             <section id="tab-allenamento" class="tab-content">
-                <header style="margin-bottom: 24px;">
-                    <h1 style="font-size: 2rem; font-weight: 800;">Allenamento & Movimento</h1>
-                    <p style="color: var(--text-sec); font-size: 0.88rem;">Schede, carichi, serie, RPE e recupero attivo.</p>
+                <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h1 style="font-size: 2rem; font-weight: 800; letter-spacing: -0.5px;">Allenamento & Movimento</h1>
+                        <p style="color: var(--text-sec); font-size: 0.88rem;">Schede di forza, serie, carichi, RPE e recupero attivo.</p>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="glass-btn btn-pri btn-sm" data-action="open-modal" data-target="modal-workout">➕ Registra Workout</button>
+                    </div>
                 </header>
 
-                <div class="glass-card">
-                    <div class="glass-title">🏋️‍♂️ Allenamenti Registrati</div>
+                <div class="pro-card" style="margin-bottom: 22px;">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">📊 Carico di Lavoro Settimanale</span>
+                    </div>
+                    <div id="allenamento-weekly-stats"></div>
+                </div>
+
+                <div class="pro-card">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">🏋️‍♂️ Cronologia Sessioni</span>
+                        <button type="button" class="glass-btn btn-sm" data-action="open-modal" data-target="modal-workout">➕ Registra</button>
+                    </div>
                     <div id="allenamento-list"></div>
                 </div>
             </section>
 
             <!-- TAB 4: ALIMENTAZIONE -->
             <section id="tab-alimentazione" class="tab-content">
-                <header style="margin-bottom: 24px;">
-                    <h1 style="font-size: 2rem; font-weight: 800;">Alimentazione & Idratazione</h1>
-                    <p style="color: var(--text-sec); font-size: 0.88rem;">Diario pasti, macro, alimenti e scanner IA.</p>
+                <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h1 style="font-size: 2rem; font-weight: 800; letter-spacing: -0.5px;">Alimentazione & Idratazione</h1>
+                        <p style="color: var(--text-sec); font-size: 0.88rem;">Diario pasti, bilancio macronutrienti e scanner IA.</p>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="glass-btn btn-pri btn-sm" data-action="open-modal" data-target="modal-meal">➕ Registra Pasto</button>
+                        <button type="button" class="glass-btn btn-sm" data-action="duplicate-yesterday-meals">🔄 Copia Ieri</button>
+                    </div>
                 </header>
 
-                <div class="glass-card">
-                    <div class="glass-title">🍽️ Pasti della Giornata</div>
+                <div class="pro-card" style="margin-bottom: 22px;">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">🎯 Profilo Obiettivo del Giorno</span>
+                        <select id="nutrition-profile-select" class="glass-select" style="width: auto; padding: 6px 14px; font-size: 0.82rem;">
+                            <option value="workout">🏋️ Allenamento (High Carb)</option>
+                            <option value="rest">🛌 Riposo (Mod Carb)</option>
+                            <option value="intense_study">📚 Studio Intenso (Focus)</option>
+                        </select>
+                    </div>
+                    <div id="nutrition-macro-meters"></div>
+                </div>
+
+                <div class="pro-card">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">🍽️ Diario Pasti di Oggi</span>
+                        <button type="button" class="glass-btn btn-sm" data-action="open-modal" data-target="modal-meal">➕ Aggiungi</button>
+                    </div>
                     <div id="nutrition-meals-list"></div>
                 </div>
             </section>
@@ -171,71 +582,133 @@
             <!-- TAB 5: STORICO -->
             <section id="tab-storico" class="tab-content">
                 <header style="margin-bottom: 24px;">
-                    <h1 style="font-size: 2rem; font-weight: 800;">Storico & Trend</h1>
-                    <p style="color: var(--text-sec); font-size: 0.88rem;">Statistiche pratiche e correlazioni tra i pilastri.</p>
+                    <h1 style="font-size: 2rem; font-weight: 800; letter-spacing: -0.5px;">Storico & Trend</h1>
+                    <p style="color: var(--text-sec); font-size: 0.88rem;">Analisi delle correlazioni tra studio, carichi, sonno ed energia.</p>
                 </header>
 
-                <div class="glass-card">
-                    <div class="glass-title">📈 Andamento 30 Giorni</div>
-                    <div style="height: 280px; width: 100%;"><canvas id="analyticsChart"></canvas></div>
+                <div class="kpi-grid" id="storico-stats-cards">
+                    <div class="kpi-card" style="border-left: 3px solid var(--pillar-study);">
+                        <div class="kpi-title">Studio Totale (30g)</div>
+                        <div class="kpi-value" id="stat-val-study" style="color: var(--pillar-study);">42h</div>
+                        <div class="kpi-sub">Media: 1.4h / giorno</div>
+                    </div>
+                    <div class="kpi-card" style="border-left: 3px solid var(--pillar-training);">
+                        <div class="kpi-title">Allenamenti (30g)</div>
+                        <div class="kpi-value" id="stat-val-workout" style="color: var(--pillar-training);">16</div>
+                        <div class="kpi-sub">Costanza: 4 sessioni / sett.</div>
+                    </div>
+                    <div class="kpi-card" style="border-left: 3px solid var(--pillar-recovery);">
+                        <div class="kpi-title">Media Sonno</div>
+                        <div class="kpi-value" id="stat-val-sleep" style="color: var(--pillar-recovery);">7.6h</div>
+                        <div class="kpi-sub">Qualità media: 4.2 / 5</div>
+                    </div>
+                    <div class="kpi-card" style="border-left: 3px solid var(--pillar-nutrition);">
+                        <div class="kpi-title">Idratazione Media</div>
+                        <div class="kpi-value" id="stat-val-water" style="color: var(--pillar-nutrition);">2.4L</div>
+                        <div class="kpi-sub">Target medio centrato al 92%</div>
+                    </div>
+                </div>
+
+                <div class="pro-card">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">📈 Minuti di Studio vs Allenamento (Ultimi 30 Giorni)</span>
+                    </div>
+                    <div style="height: 320px; width: 100%;"><canvas id="analyticsChart"></canvas></div>
                 </div>
             </section>
 
             <!-- TAB 6: IMPOSTAZIONI -->
             <section id="tab-impostazioni" class="tab-content">
                 <header style="margin-bottom: 24px;">
-                    <h1 style="font-size: 2rem; font-weight: 800;">Impostazioni Globali</h1>
-                    <p style="color: var(--text-sec); font-size: 0.88rem;">Pairing multi-dispositivo, backup, privacy e preferenze.</p>
+                    <h1 style="font-size: 2rem; font-weight: 800; letter-spacing: -0.5px;">Impostazioni & Archiviazione</h1>
+                    <p style="color: var(--text-sec); font-size: 0.88rem;">Archiviazione dati persistente, cifratura locale e pairing rapido.</p>
                 </header>
 
-                <div class="glass-card">
-                    <div class="glass-card">
-    <div class="glass-title">☁️ Connessione Sync Cloudflare</div>
-    <p style="font-size:0.82rem; color:var(--text-sec); margin-bottom:14px;">
-        Inserisci l'URL del tuo Cloudflare Worker per abilitare sincronizzazione e pairing QR.
-    </p>
-
-    <label for="sync-worker-url" style="display:block; font-size:0.82rem; color:var(--text-sec); margin-bottom:8px;">
-        URL del Worker
-    </label>
-
-    <input
-        type="url"
-        id="sync-worker-url"
-        class="glass-input"
-        placeholder="https://nome-worker.tuo-account.workers.dev"
-        autocomplete="url"
-        inputmode="url"
-        style="margin-bottom:12px;"
-    >
-
-    <button type="button" class="glass-btn btn-pri" data-action="save-sync-worker-url">
-        Salva URL Worker
-    </button>
-</div>
-
-                    <div class="glass-title">📱 Pairing QR Multi-Dispositivo (Cloudflare Worker)</div>
-                    <p style="font-size:0.82rem; color:var(--text-sec); margin-bottom:14px;">Genera un codice QR monouso (valido 10 min) per associare un secondo dispositivo (iPad, Android o Mac) in sicurezza.</p>
-                    <button type="button" class="glass-btn btn-pri" data-action="generate-qr-pairing">Genera Codice QR Pairing 📲</button>
+                <!-- STORAGE & PRIVACY STATUS -->
+                <div class="pro-card" style="margin-bottom: 22px; border-left: 3px solid var(--accent);">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">🛡️ Archiviazione Dati Locale (Zero-Friction)</span>
+                        <span id="storage-persistence-badge" class="badge-status">Archiviazione Protetta: Persistenza Attiva</span>
+                    </div>
+                    <p style="font-size:0.85rem; color:var(--text-sec); line-height: 1.5; margin-bottom: 12px;">
+                        Omnibus Protocol Pro salva tutti i tuoi dati nel database cifrato del tuo browser (IndexedDB). Nessun account obbligatorio, nessuna password chiesta all'avvio: l'accesso è immediato al 100%.
+                    </p>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-sec);">
+                        <span style="background: var(--surface-hover); padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border-glass);">🔒 Chiave WebCrypto AES-256-GCM Automatica</span>
+                        <span style="background: var(--surface-hover); padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border-glass);">💾 Persistenza Disco Garantita (No Eviction)</span>
+                        <span style="background: var(--surface-hover); padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border-glass);">⚡ 100% Offline-First</span>
+                    </div>
                 </div>
 
-                <div class="glass-card">
-                    <div class="glass-title">🔒 Passphrase in Memoria & Sicurezza</div>
-                    <p style="font-size: 0.82rem; color: var(--text-sec); margin-bottom: 14px;">La tua passphrase viene tenuta ESCLUSIVAMENTE nella RAM del browser finché l'app rimane aperta.</p>
-                    <button type="button" class="glass-btn" data-action="lock-app-manual">Blocca Omnibus Adesso 🔒</button>
-                </div>
-
-                <div class="glass-card">
-                    <div class="glass-title">💾 Backup & Ripristino Dati</div>
+                <!-- 1-TAP PAIRING -->
+                <div class="pro-card" style="margin-bottom: 22px;">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">📱 Associazione Dispositivi Rapida (1-Tap Pairing)</span>
+                    </div>
+                    <p style="font-size:0.85rem; color:var(--text-sec); margin-bottom:14px; line-height: 1.5;">
+                        Vuoi condividere i tuoi dati su iPad, iPhone o un altro Mac? Genera il codice rapido o inquadra il QR con la fotocamera:
+                    </p>
                     <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <button type="button" class="glass-btn btn-pri" style="flex:1" data-action="generate-qr-pairing">📲 Mostra QR & Codice Rapido</button>
+                        <button type="button" class="glass-btn" style="flex:1" data-action="open-redeem-prompt">📥 Incolla Codice Pairing</button>
+                    </div>
+                </div>
+
+                <!-- SYNC CONFIGURATION -->
+                <div class="pro-card" style="margin-bottom: 22px;">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">☁️ Hub Sincronizzazione Cloudflare (Facoltativo)</span>
+                    </div>
+                    <form id="form-sync-config">
+                        <div class="form-group">
+                            <label class="form-label">URL Cloudflare Worker</label>
+                            <input type="url" id="config-sync-url" class="glass-input" placeholder="https://omnibus-sync-hub.tuouser.workers.dev">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group" style="flex:1">
+                                <label class="form-label">ID Stanza (Room ID)</label>
+                                <input type="text" id="config-room-id" class="glass-input" readonly>
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label class="form-label">ID Dispositivo</label>
+                                <input type="text" id="config-device-id" class="glass-input" readonly>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                            <button type="submit" class="glass-btn btn-pri" style="flex:1">💾 Salva Configurazione Sync</button>
+                            <button type="button" class="glass-btn" style="flex:1" data-action="test-sync-now">🔄 Sincronizza Ora</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- GEMINI API CONFIGURATION -->
+                <div class="pro-card" style="margin-bottom: 22px;">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">🤖 Scanner Pasti IA (Google Gemini)</span>
+                    </div>
+                    <p style="font-size:0.82rem; color:var(--text-sec); margin-bottom:14px;">Inserisci la tua API key Gemini per stimare automaticamente i macronutrienti fotografando i tuoi piatti:</p>
+                    <div class="form-row">
+                        <input type="password" id="config-gemini-key" class="glass-input" placeholder="AIzaSy...">
+                        <button type="button" class="glass-btn btn-pri" style="width: auto;" data-action="save-gemini-key">Salva Chiave</button>
+                    </div>
+                </div>
+
+                <!-- BACKUP & RESTORE -->
+                <div class="pro-card">
+                    <div class="pro-card-header">
+                        <span class="pro-card-title">💾 Backup Locale & Reset</span>
+                    </div>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px;">
                         <button type="button" class="glass-btn btn-pri" style="flex:1" data-action="export-json">Esporta Backup JSON 📦</button>
                         <button type="button" class="glass-btn" style="flex:1" data-action="import-json">Ripristina Backup JSON 📥</button>
                     </div>
+                    <button type="button" class="glass-btn" style="font-size: 0.85rem;" data-action="reset-demo-data">🔄 Ripristina Dati Esempio Iniziali</button>
                 </div>
             </section>
         </main>
     </div>
 
+    <!-- Mobile Bottom Navigation (Floating Dock) -->
     <nav class="bottom-nav" aria-label="Navigazione mobile">
         <button type="button" class="nav-item active" data-action="switch-tab" data-tab="oggi">
             <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>Oggi

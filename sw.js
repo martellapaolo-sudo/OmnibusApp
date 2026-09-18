@@ -1,4 +1,4 @@
-const CACHE_NAME = 'omnibus-pwa-v8.5-secure';
+const CACHE_NAME = 'omnibus-pwa-v9.0-flagship';
 const ASSETS = [
   './index.html',
   './manifest.webmanifest',

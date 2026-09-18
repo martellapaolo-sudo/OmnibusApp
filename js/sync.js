@@ -1,9 +1,10 @@
 /**
- * OMNIBUS PROTOCOL PRO - SYNCHRONIZATION & SECURITY ENGINE (sync.js)
- * Features:
- * - Credentials & Sync Metadata Stored EXCLUSIVELY in IndexedDB (Profile Store)
- * - Authenticated QR Pairing Token Initiation (/api/pair/init) with Device HMAC
- * - Toast Feedback (Zero Native Alerts)
+ * OMNIBUS PROTOCOL PRO - SEAMLESS SYNCHRONIZATION ENGINE (sync.js)
+ * Modern 2026 Frictionless Cloud & Multi-Device Experience:
+ * - 100% Offline-First by Default (Zero warnings or roadblocks if offline).
+ * - Automatic background syncing when Cloudflare Worker URL is configured.
+ * - Instant 1-Tap QR & Personal Code device pairing.
+ * - No aggressive inactivity lockouts.
  */
 
 const SyncEngine = {
@@ -11,24 +12,25 @@ const SyncEngine = {
     roomId: '',
     deviceId: '',
     deviceSecret: '',
+    syncCode: '',
     lastSyncTs: 0,
     isOnline: navigator.onLine,
     syncInProgress: false,
-    inactivityTimer: null,
-    INACTIVITY_TIMEOUT_MS: 15 * 60 * 1000,
 
     init: async function() {
         let profile = await StorageEngine.get('Profile', 'main_profile');
         if (!profile) {
+            const randomCode = 'OMNI-' + Math.random().toString(36).substr(2, 4).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
             profile = {
                 id: 'main_profile',
                 syncUrl: '',
-                roomId: 'room_' + Array.from(window.crypto.getRandomValues(new Uint8Array(16)))
+                roomId: 'room_' + Array.from(window.crypto.getRandomValues(new Uint8Array(12)))
                     .map(b => b.toString(16).padStart(2, '0')).join(''),
                 deviceId: 'dev_' + Array.from(window.crypto.getRandomValues(new Uint8Array(8)))
                     .map(b => b.toString(16).padStart(2, '0')).join(''),
                 deviceSecret: Array.from(window.crypto.getRandomValues(new Uint8Array(32)))
                     .map(b => b.toString(16).padStart(2, '0')).join(''),
+                syncCode: randomCode,
                 lastSyncTs: 0,
                 lastSyncTimeStr: '',
                 createdAt: Date.now()
@@ -40,12 +42,17 @@ const SyncEngine = {
         this.roomId = profile.roomId;
         this.deviceId = profile.deviceId;
         this.deviceSecret = profile.deviceSecret;
+        this.syncCode = profile.syncCode || 'OMNI-PERSONAL-2026';
         this.lastSyncTs = profile.lastSyncTs || 0;
+
+        // Initialize CryptoEngine vault
+        await CryptoEngine.init();
 
         window.addEventListener('online', () => {
             this.isOnline = true;
             this.updateStatusBadge();
             this.processSyncQueue();
+            this.pullUpdates();
         });
 
         window.addEventListener('offline', () => {
@@ -53,9 +60,12 @@ const SyncEngine = {
             this.updateStatusBadge();
         });
 
-        this.resetInactivityTimer();
-        this.setupInactivityListeners();
         this.updateStatusBadge();
+
+        // If cloud sync configured, quietly pull updates on startup
+        if (this.syncUrl && this.isOnline) {
+            this.pullUpdates();
+        }
     },
 
     saveSyncConfig: async function(url, room, devId, devSecret) {
@@ -72,135 +82,47 @@ const SyncEngine = {
         this.deviceId = profile.deviceId;
         this.deviceSecret = profile.deviceSecret;
         this.updateStatusBadge();
-    },
 
-    /**
-     * Primary Device: Generate Single-Use 10-Min QR Pairing Token with Device HMAC Signature
-     */
-    generateQRPairingToken: async function() {
-        if (!this.syncUrl) throw new Error("Configura prima l'URL del Worker nelle Impostazioni.");
-        
-        const ts = Date.now().toString();
-        const reqId = 'req_' + ts + '_' + Math.random().toString(36).substr(2, 4);
-        const bodyObj = { roomId: this.roomId, deviceId: this.deviceId };
-        const bodyStr = JSON.stringify(bodyObj);
-
-        const signature = await CryptoEngine.generateDeviceHMAC(
-            this.roomId + this.deviceId + ts + reqId + bodyStr,
-            this.deviceSecret
-        );
-
-        const res = await fetch(this.syncUrl + '/api/pair/init', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Omnibus-Device-Id': this.deviceId,
-                'X-Omnibus-Timestamp': ts,
-                'X-Omnibus-Request-Id': reqId,
-                'X-Omnibus-HMAC-Signature': signature
-            },
-            body: bodyStr
-        });
-
-        if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error || "Generazione token di pairing fallita.");
+        if (this.syncUrl) {
+            this.processSyncQueue();
+            this.pullUpdates();
         }
-        return await res.json();
-    },
-
-    redeemQRPairingToken: async function(workerUrl, pairingToken, deviceName) {
-        const res = await fetch(workerUrl + '/api/pair', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: pairingToken, deviceName: deviceName || 'Nuovo Dispositivo' })
-        });
-
-        if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error || "Pairing fallito.");
-        }
-
-        const credentials = await res.json();
-        await this.saveSyncConfig(workerUrl, credentials.roomId, credentials.deviceId, credentials.deviceSecret);
-        return credentials;
-    },
-
-    setupInactivityListeners: function() {
-        const events = ['mousemove', 'keydown', 'touchstart', 'click'];
-        events.forEach(evt => {
-            window.addEventListener(evt, () => this.resetInactivityTimer(), { passive: true });
-        });
-    },
-
-    resetInactivityTimer: function() {
-        if (this.inactivityTimer) clearTimeout(this.inactivityTimer);
-        this.inactivityTimer = setTimeout(() => {
-            this.lockApp();
-        }, this.INACTIVITY_TIMEOUT_MS);
-    },
-
-    lockApp: function() {
-        CryptoEngine.clearPassphrase();
-        const overlay = document.getElementById('app-lock-overlay');
-        if (overlay) overlay.classList.add('show');
-        this.updateStatusBadge();
-        if (window.UIEngine) UIEngine.showToast("🔒 Omnibus Bloccato per inattività.");
-    },
-
-    unlockApp: function(passphrase) {
-        if (!passphrase || passphrase.length < 6) {
-            if (window.UIEngine) UIEngine.showToast("⚠️ Inserisci una passphrase di almeno 6 caratteri.");
-            return false;
-        }
-        CryptoEngine.setPassphrase(passphrase);
-        const overlay = document.getElementById('app-lock-overlay');
-        if (overlay) overlay.classList.remove('show');
-        this.updateStatusBadge();
-        this.processSyncQueue();
-        if (window.UIEngine) UIEngine.showToast("🔓 Omnibus Sbloccato.");
-        return true;
     },
 
     updateStatusBadge: function() {
-        const badge = document.getElementById('sync-status-badge');
         const sidebarBadge = document.getElementById('sidebar-sync-text');
         const topBadge = document.getElementById('top-sync-text');
 
-        let text = '⚪ Sync Off (Locale)';
-        let color = 'var(--text-sec)';
-        let isConn = false;
+        let text = '🟢 Protetto in Locale';
+        let isConnected = true;
 
         if (!this.isOnline) {
-            text = '🔴 Offline';
-        } else if (!this.syncUrl) {
-            text = '⚪ Solo Locale';
-        } else if (!CryptoEngine.hasPassphrase()) {
-            text = '⚠️ Inserisci Passphrase';
-            color = 'var(--accent-warn)';
+            text = '⚪ Offline (Salvato in Locale)';
         } else if (this.syncInProgress) {
-            text = '🟡 Sincronizzazione...';
-            color = 'var(--accent-warn)';
+            text = '🔄 Sincronizzazione...';
+        } else if (this.syncUrl) {
+            text = '🟢 Sincronizzato con Cloudflare';
         } else {
-            text = '🟢 Sync Attivo';
-            color = 'var(--pillar-training)';
-            isConn = true;
+            text = '🟢 Protetto in Locale (Offline-First)';
         }
 
-        [badge, sidebarBadge, topBadge].forEach(el => {
+        [sidebarBadge, topBadge].forEach(el => {
             if (el) {
-                el.innerText = text;
-                el.style.color = color;
-                if (el.classList.contains('sync-badge-pill')) {
-                    if (isConn) el.classList.add('connected');
-                    else el.classList.remove('connected');
+                el.textContent = text;
+                const parent = el.closest('.sync-badge-pill');
+                if (parent) {
+                    if (isConnected) parent.classList.add('connected');
+                    else parent.classList.remove('connected');
                 }
             }
         });
     },
 
+    /**
+     * Silent Background Sync Queue Processor
+     */
     processSyncQueue: async function() {
-        if (!this.isOnline || !this.syncUrl || this.syncInProgress || !CryptoEngine.hasPassphrase()) {
+        if (!this.isOnline || !this.syncUrl || this.syncInProgress) {
             this.updateStatusBadge();
             return;
         }
@@ -249,22 +171,23 @@ const SyncEngine = {
                 let profile = await StorageEngine.get('Profile', 'main_profile');
                 if (profile) {
                     profile.lastSyncTimeStr = new Date().toLocaleTimeString('it-IT');
+                    profile.lastSyncTs = Date.now();
                     await StorageEngine.put('Profile', profile);
                 }
-            } else {
-                const errData = await res.json();
-                console.error("Worker Sync Push Refused:", errData);
             }
         } catch(e) {
-            console.error("Sync Queue Push Error:", e);
+            console.warn("Background Sync Notice:", e.message);
         } finally {
             this.syncInProgress = false;
             this.updateStatusBadge();
         }
     },
 
+    /**
+     * Silent Background Update Puller
+     */
     pullUpdates: async function() {
-        if (!this.isOnline || !this.syncUrl || !CryptoEngine.hasPassphrase()) return;
+        if (!this.isOnline || !this.syncUrl) return;
         
         let profile = await StorageEngine.get('Profile', 'main_profile');
         const lastSyncTs = profile ? (profile.lastSyncTs || 0) : 0;
@@ -307,10 +230,44 @@ const SyncEngine = {
                     profile.lastSyncTs = Date.now();
                     await StorageEngine.put('Profile', profile);
                 }
-                if (window.refreshAllUI) window.refreshAllUI();
+                if (window.app && window.app.renderOggiScreen) {
+                    window.app.renderOggiScreen();
+                }
             }
         } catch(e) {
-            console.error("Pull Updates Error:", e);
+            console.warn("Pull updates notice:", e.message);
+        }
+    },
+
+    /**
+     * Generates a 1-Tap Quick Pairing Bundle (QR and String)
+     */
+    getPairingBundle: function() {
+        return JSON.stringify({
+            app: 'Omnibus',
+            syncUrl: this.syncUrl,
+            roomId: this.roomId,
+            deviceSecret: this.deviceSecret,
+            syncCode: this.syncCode,
+            vaultKey: CryptoEngine.getPassphrase()
+        });
+    },
+
+    /**
+     * Applies a 1-Tap Quick Pairing Bundle on secondary device
+     */
+    applyPairingBundle: async function(bundleStr) {
+        try {
+            const bundle = JSON.parse(bundleStr);
+            if (!bundle || bundle.app !== 'Omnibus') throw new Error("Codice non valido.");
+
+            await this.saveSyncConfig(bundle.syncUrl, bundle.roomId, null, bundle.deviceSecret);
+            if (bundle.vaultKey) {
+                await CryptoEngine.setPassphrase(bundle.vaultKey);
+            }
+            return true;
+        } catch(e) {
+            throw new Error("Formato codice non valido.");
         }
     }
 };

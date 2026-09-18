@@ -1,327 +1,369 @@
 /**
- * OMNIBUS PROTOCOL PRO - Cloudflare Worker
- * Endpoints:
- *   POST /api/pair/init  - Primary device generates QR pairing token
- *   POST /api/pair       - Secondary device redeems token
- *   POST /api/sync       - Push encrypted payload
- *   GET  /api/sync       - Pull updates
- *   GET  /health         - Health check
+ * OMNIBUS PROTOCOL PRO - SECURE CLOUDFLARE WORKER SYNC & GEMINI HUB (index.js)
+ * Security Features:
+ * - STRICT CORS: Requires env.ALLOWED_ORIGIN to match incoming Origin header (No '*' wildcard fallback).
+ * - AUTHENTICATED PAIRING INIT (/api/pair/init): Requires existing authorized device HMAC signature.
+ * - HASHED QR PAIRING TOKENS IN D1 (SHA-256) & IMMEDIATE DELETION UPON REDEMPTION.
+ * - Constant-Time HMAC Signature Verification with Master-Key Encrypted Device Secrets.
+ * - Anti-Replay Protection & 2MB Body Hard Limit.
+ * - Secure Serverless Proxy for Gemini Meal Parser.
  */
 
-const PAIRING_TOKEN_TTL_MS = 10 * 60 * 1000;       // 10 minutes
-const REPLAY_WINDOW_MS     = 5 * 60 * 1000;        // 5 minutes
-const MAX_BODY_BYTES       = 5 * 1024 * 1024;      // 5 MB
-const RATE_LIMIT_WINDOW_S  = 60;
-const RATE_LIMIT_MAX_REQ   = 30;
-
-// ─── CORS ────────────────────────────────────────────────────────────────────
-
-function corsHeaders(env, reqOrigin) {
-  const allowed = (env.ALLOWED_ORIGIN || '').trim();
-
-  // If ALLOWED_ORIGIN is set, echo it back only when the origin matches.
-  // If it is not set (dev/test mode), fall back to * so the browser never
-  // receives the invalid literal string "null" that triggers Failed to fetch.
-  let origin;
-  if (allowed) {
-    origin = reqOrigin === allowed ? allowed : 'null';
-  } else {
-    origin = '*';
-  }
-
-  return {
-    'Access-Control-Allow-Origin':  origin,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Omnibus-Device-Id, X-Omnibus-Timestamp, X-Omnibus-Request-Id, X-Omnibus-HMAC-Signature',
-    'Access-Control-Max-Age':       '86400',
-  };
-}
-
-function jsonResp(data, status, headers) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...headers },
-  });
-}
-
-// ─── HMAC ────────────────────────────────────────────────────────────────────
-
-async function importKey(secret) {
-  const enc = new TextEncoder();
-  return crypto.subtle.importKey(
-    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']
-  );
-}
-
-async function verifyHMAC(message, signature, secret) {
-  try {
-    const key  = await importKey(secret);
-    const enc  = new TextEncoder();
-    const sig  = hexToBytes(signature);
-    return crypto.subtle.verify('HMAC', key, sig, enc.encode(message));
-  } catch {
-    return false;
-  }
-}
-
-function hexToBytes(hex) {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.length; i++)
-    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  return bytes;
-}
-
-function randomHex(bytes) {
-  const arr = new Uint8Array(bytes);
-  crypto.getRandomValues(arr);
-  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// ─── RATE LIMITER (D1) ───────────────────────────────────────────────────────
-
-async function checkRateLimit(db, deviceId) {
-  const now    = Math.floor(Date.now() / 1000);
-  const window = now - RATE_LIMIT_WINDOW_S;
-
-  await db.prepare('DELETE FROM rate_limit WHERE window_start < ?').bind(window).run();
-
-  const row = await db.prepare(
-    'SELECT request_count FROM rate_limit WHERE device_id = ? AND window_start >= ?'
-  ).bind(deviceId, window).first();
-
-  if (row && row.request_count >= RATE_LIMIT_MAX_REQ) return false;
-
-  if (row) {
-    await db.prepare(
-      'UPDATE rate_limit SET request_count = request_count + 1 WHERE device_id = ?'
-    ).bind(deviceId).run();
-  } else {
-    await db.prepare(
-      'INSERT INTO rate_limit (device_id, request_count, window_start) VALUES (?, 1, ?)'
-    ).bind(deviceId, now).run();
-  }
-  return true;
-}
-
-// ─── REQUEST AUTH ─────────────────────────────────────────────────────────────
-
-async function authenticateRequest(request, db, body) {
-  const deviceId  = request.headers.get('X-Omnibus-Device-Id');
-  const timestamp = request.headers.get('X-Omnibus-Timestamp');
-  const reqId     = request.headers.get('X-Omnibus-Request-Id');
-  const hmacSig   = request.headers.get('X-Omnibus-HMAC-Signature');
-
-  if (!deviceId || !timestamp || !reqId || !hmacSig)
-    return { ok: false, error: 'Missing auth headers', status: 401 };
-
-  // Timestamp freshness
-  const ts  = parseInt(timestamp, 10);
-  const now = Date.now();
-  if (isNaN(ts) || Math.abs(now - ts) > REPLAY_WINDOW_MS)
-    return { ok: false, error: 'Request expired or clock skew too large', status: 401 };
-
-  // Replay protection
-  const existing = await db.prepare(
-    'SELECT id FROM replay_cache WHERE request_id = ?'
-  ).bind(reqId).first();
-  if (existing)
-    return { ok: false, error: 'Replay detected', status: 401 };
-
-  // Device lookup
-  const device = await db.prepare(
-    'SELECT device_secret, room_id FROM devices WHERE device_id = ?'
-  ).bind(deviceId).first();
-  if (!device)
-    return { ok: false, error: 'Unknown device', status: 403 };
-
-  // HMAC verify
-  const roomId  = device.room_id;
-  const bodyStr = body || '';
-  const message = roomId + deviceId + timestamp + reqId + bodyStr;
-  const valid   = await verifyHMAC(message, hmacSig, device.device_secret);
-  if (!valid)
-    return { ok: false, error: 'Invalid signature', status: 401 };
-
-  // Store replay entry
-  const expiry = Math.floor((now + REPLAY_WINDOW_MS) / 1000);
-  await db.prepare(
-    'INSERT OR IGNORE INTO replay_cache (request_id, expires_at) VALUES (?, ?)'
-  ).bind(reqId, expiry).run();
-
-  return { ok: true, deviceId, roomId };
-}
-
-// ─── HANDLERS ────────────────────────────────────────────────────────────────
-
-/** POST /api/pair/init */
-async function handlePairInit(request, db, cors) {
-  const bodyStr  = await readBody(request);
-  const bodyObj  = JSON.parse(bodyStr);
-  const { roomId, deviceId } = bodyObj;
-
-  if (!roomId || !deviceId)
-    return jsonResp({ error: 'roomId and deviceId required' }, 400, cors);
-
-  const deviceId2 = request.headers.get('X-Omnibus-Device-Id');
-  const timestamp = request.headers.get('X-Omnibus-Timestamp');
-  const reqId     = request.headers.get('X-Omnibus-Request-Id');
-  const hmacSig   = request.headers.get('X-Omnibus-HMAC-Signature');
-
-  if (!deviceId2 || !timestamp || !reqId || !hmacSig)
-    return jsonResp({ error: 'Missing auth headers' }, 401, cors);
-
-  const ts = parseInt(timestamp, 10);
-  if (isNaN(ts) || Math.abs(Date.now() - ts) > REPLAY_WINDOW_MS)
-    return jsonResp({ error: 'Request expired' }, 401, cors);
-
-  // Look up the initiating device
-  const device = await db.prepare(
-    'SELECT device_secret FROM devices WHERE device_id = ? AND room_id = ?'
-  ).bind(deviceId2, roomId).first();
-
-  if (!device) {
-    // First registration — auto-register the initiating device
-    const newSecret = randomHex(32);
-    await db.prepare(
-      'INSERT OR IGNORE INTO devices (device_id, room_id, device_secret, device_name, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(deviceId2, roomId, newSecret, 'Primary Device', Date.now()).run();
-
-    // For first-time registration we trust the call; no HMAC check needed
-  } else {
-    const message = roomId + deviceId2 + timestamp + reqId + bodyStr;
-    const valid   = await verifyHMAC(message, hmacSig, device.device_secret);
-    if (!valid)
-      return jsonResp({ error: 'Invalid signature' }, 401, cors);
-  }
-
-  // Create pairing token
-  const token   = randomHex(16);
-  const expires = Date.now() + PAIRING_TOKEN_TTL_MS;
-  await db.prepare(
-    'INSERT INTO pairing_tokens (token, room_id, initiator_device_id, expires_at, used) VALUES (?, ?, ?, ?, 0)'
-  ).bind(token, roomId, deviceId2, expires).run();
-
-  return jsonResp({ token, roomId, expiresAt: expires }, 200, cors);
-}
-
-/** POST /api/pair */
-async function handlePair(request, db, cors) {
-  const body = await readBody(request);
-  const { token, deviceName } = JSON.parse(body);
-
-  if (!token)
-    return jsonResp({ error: 'token required' }, 400, cors);
-
-  const row = await db.prepare(
-    'SELECT * FROM pairing_tokens WHERE token = ? AND used = 0'
-  ).bind(token).first();
-
-  if (!row)
-    return jsonResp({ error: 'Invalid or expired pairing token' }, 400, cors);
-  if (row.expires_at < Date.now())
-    return jsonResp({ error: 'Pairing token expired' }, 400, cors);
-
-  // Mark token used
-  await db.prepare('UPDATE pairing_tokens SET used = 1 WHERE token = ?').bind(token).run();
-
-  // Create new device credentials
-  const newDeviceId     = 'dev_' + randomHex(8);
-  const newDeviceSecret = randomHex(32);
-  const name            = deviceName || 'New Device';
-
-  await db.prepare(
-    'INSERT INTO devices (device_id, room_id, device_secret, device_name, created_at) VALUES (?, ?, ?, ?, ?)'
-  ).bind(newDeviceId, row.room_id, newDeviceSecret, name, Date.now()).run();
-
-  return jsonResp({
-    deviceId:     newDeviceId,
-    deviceSecret: newDeviceSecret,
-    roomId:       row.room_id,
-  }, 200, cors);
-}
-
-/** POST /api/sync */
-async function handleSyncPush(request, db, cors) {
-  const bodyStr = await readBody(request);
-  const auth    = await authenticateRequest(request, db, bodyStr);
-  if (!auth.ok)
-    return jsonResp({ error: auth.error }, auth.status, cors);
-
-  if (!await checkRateLimit(db, auth.deviceId))
-    return jsonResp({ error: 'Rate limit exceeded' }, 429, cors);
-
-  const body = JSON.parse(bodyStr);
-  if (!body.payload)
-    return jsonResp({ error: 'payload required' }, 400, cors);
-
-  await db.prepare(
-    'INSERT INTO sync_data (room_id, device_id, encrypted_payload, created_at) VALUES (?, ?, ?, ?)'
-  ).bind(auth.roomId, auth.deviceId, body.payload, Date.now()).run();
-
-  return jsonResp({ ok: true, ts: Date.now() }, 200, cors);
-}
-
-/** GET /api/sync */
-async function handleSyncPull(request, db, cors) {
-  const auth = await authenticateRequest(request, db, '');
-  if (!auth.ok)
-    return jsonResp({ error: auth.error }, auth.status, cors);
-
-  const url   = new URL(request.url);
-  const since = parseInt(url.searchParams.get('since') || '0', 10);
-
-  const { results } = await db.prepare(
-    'SELECT encrypted_payload, created_at FROM sync_data WHERE room_id = ? AND device_id != ? AND created_at > ? ORDER BY created_at ASC LIMIT 100'
-  ).bind(auth.roomId, auth.deviceId, since).all();
-
-  return jsonResp({ results, ts: Date.now() }, 200, cors);
-}
-
-// ─── BODY HELPER ─────────────────────────────────────────────────────────────
-
-async function readBody(request) {
-  const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
-  if (contentLength > MAX_BODY_BYTES)
-    throw new Error('Payload too large');
-  return request.text();
-}
-
-// ─── MAIN HANDLER ────────────────────────────────────────────────────────────
-
 export default {
-  async fetch(request, env) {
-    const origin = request.headers.get('Origin') || '';
-    const cors   = corsHeaders(env, origin);
+    async fetch(request, env) {
+        const url = new URL(request.url);
+        const originHeader = request.headers.get('Origin');
 
-    if (request.method === 'OPTIONS')
-      return new Response(null, { status: 204, headers: cors });
+        // STRICT CORS ENFORCEMENT: Requires env.ALLOWED_ORIGIN. No '*' fallback.
+        const allowedOriginConfig = env.ALLOWED_ORIGIN;
+        if (!allowedOriginConfig || (originHeader && originHeader !== allowedOriginConfig)) {
+            if (request.method === 'OPTIONS') {
+                return new Response(null, { status: 403 });
+            }
+            return new Response(JSON.stringify({ error: "Accesso CORS negato: origine non autorizzata." }), {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
 
-    const url      = new URL(request.url);
-    const pathname = url.pathname;
-    const method   = request.method;
-    const db       = env.DB;
+        const corsHeaders = {
+            'Access-Control-Allow-Origin': allowedOriginConfig,
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Omnibus-Device-Id, X-Omnibus-Timestamp, X-Omnibus-Request-Id, X-Omnibus-HMAC-Signature',
+        };
 
-    try {
-      if (pathname === '/health' && method === 'GET')
-        return jsonResp({ status: 'ok', ts: Date.now() }, 200, cors);
+        if (request.method === 'OPTIONS') {
+            return new Response(null, { headers: corsHeaders });
+        }
 
-      if (pathname === '/api/pair/init' && method === 'POST')
-        return await handlePairInit(request, db, cors);
+        // STRICT WORKER_MASTER_KEY CHECK
+        if (!env.WORKER_MASTER_KEY) {
+            return new Response(JSON.stringify({ error: "Server misconfigured" }), { status: 500, headers: corsHeaders });
+        }
 
-      if (pathname === '/api/pair' && method === 'POST')
-        return await handlePair(request, db, cors);
+        const masterKey = await getWorkerMasterKey(env.WORKER_MASTER_KEY);
 
-      if (pathname === '/api/sync' && method === 'POST')
-        return await handleSyncPush(request, db, cors);
+        try {
+            // =========================================================================
+            // 1. PUBLIC UNAUTHENTICATED PAIRING REDEMPTION (/api/pair)
+            // =========================================================================
 
-      if (pathname === '/api/sync' && method === 'GET')
-        return await handleSyncPull(request, db, cors);
+            if (url.pathname === '/api/pair' && request.method === 'POST') {
+                const bodyText = await request.text();
+                const body = JSON.parse(bodyText);
+                const { token, deviceName } = body;
 
-      return jsonResp({ error: 'Not Found' }, 404, cors);
+                if (!token) {
+                    return new Response(JSON.stringify({ error: "Token di pairing obbligatorio." }), { status: 400, headers: corsHeaders });
+                }
 
-    } catch (err) {
-      console.error('Worker error:', err);
-      return jsonResp({ error: 'Internal Server Error' }, 500, cors);
+                const tokenHash = await hashSHA256(token);
+
+                const pairing = await env.DB.prepare(
+                    `SELECT * FROM pairing_tokens WHERE token_hash = ? AND expires_at > ?`
+                ).bind(tokenHash, Date.now()).first();
+
+                if (!pairing) {
+                    return new Response(JSON.stringify({ error: "Token di pairing non valido o scaduto." }), { status: 403, headers: corsHeaders });
+                }
+
+                // Delete token from D1 immediately upon redemption
+                await env.DB.prepare(`DELETE FROM pairing_tokens WHERE token_hash = ?`).bind(tokenHash).run();
+
+                // Issue new 256-bit random Device Auth Secret & Device ID
+                const newDeviceId = 'dev_' + Array.from(crypto.getRandomValues(new Uint8Array(8)))
+                    .map(b => b.toString(16).padStart(2, '0')).join('');
+                const deviceAuthSecret = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+                    .map(b => b.toString(16).padStart(2, '0')).join('');
+
+                const encryptedObj = await encryptSecretWithMasterKey(deviceAuthSecret, masterKey);
+
+                await env.DB.prepare(
+                    `INSERT INTO authorized_devices (device_id, room_id, device_name, encrypted_device_secret, iv, key_version, linked_at, last_active, status)
+                     VALUES (?, ?, ?, ?, ?, 1, ?, ?, 'authorized')`
+                ).bind(newDeviceId, pairing.room_id, deviceName || 'Dispositivo Secondario', encryptedObj.cipherBase64, encryptedObj.ivBase64, Date.now(), Date.now()).run();
+
+                return new Response(JSON.stringify({
+                    deviceId: newDeviceId,
+                    deviceSecret: deviceAuthSecret,
+                    roomId: pairing.room_id
+                }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            }
+
+            // =========================================================================
+            // 2. DEVICE AUTHENTICATION & HMAC VERIFICATION FOR ALL OTHER ENDPOINTS
+            // =========================================================================
+
+            const deviceId = request.headers.get('X-Omnibus-Device-Id');
+            const timestamp = parseInt(request.headers.get('X-Omnibus-Timestamp') || '0');
+            const requestId = request.headers.get('X-Omnibus-Request-Id');
+            const signature = request.headers.get('X-Omnibus-HMAC-Signature');
+
+            if (!deviceId || !timestamp || !requestId || !signature) {
+                return new Response(JSON.stringify({ error: "Intestazioni di autenticazione dispositivo mancanti." }), { status: 401, headers: corsHeaders });
+            }
+
+            const now = Date.now();
+            if (Math.abs(now - timestamp) > 5 * 60 * 1000) {
+                return new Response(JSON.stringify({ error: "Richiesta rifiutata: timestamp scaduto o non sincronizzato." }), { status: 401, headers: corsHeaders });
+            }
+
+            const replayCheck = await env.DB.prepare(`SELECT request_id FROM replay_cache WHERE request_id = ?`).bind(requestId).first();
+            if (replayCheck) {
+                return new Response(JSON.stringify({ error: "Richiesta rifiutata: replay attack rilevato." }), { status: 409, headers: corsHeaders });
+            }
+            await env.DB.prepare(`INSERT INTO replay_cache (request_id, device_id, timestamp, created_at) VALUES (?, ?, ?, ?)`).bind(requestId, deviceId, timestamp, now).run();
+
+            const rateLimitKey = `rate_${deviceId}_${Math.floor(now / 60000)}`;
+            const rateObj = await env.DB.prepare(`SELECT count FROM rate_limits WHERE key = ?`).bind(rateLimitKey).first();
+            const count = (rateObj ? rateObj.count : 0) + 1;
+            if (count > 30) {
+                return new Response(JSON.stringify({ error: "Troppe richieste: rate limit superato (max 30 req/min)." }), { status: 429, headers: corsHeaders });
+            }
+            await env.DB.prepare(`INSERT INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET count = ?`).bind(rateLimitKey, count, now + 60000, count).run();
+
+            const dev = await env.DB.prepare(
+                `SELECT room_id, encrypted_device_secret, iv, status FROM authorized_devices WHERE device_id = ?`
+            ).bind(deviceId).first();
+
+            if (!dev || dev.status === 'revoked' || !dev.encrypted_device_secret) {
+                return new Response(JSON.stringify({ error: "Dispositivo non autorizzato o revocato." }), { status: 403, headers: corsHeaders });
+            }
+
+            const plainDeviceSecret = await decryptSecretWithMasterKey(dev.encrypted_device_secret, dev.iv, masterKey);
+
+            let bodyText = "";
+            if (request.method === 'POST') {
+                bodyText = await request.text();
+                if (bodyText.length > 2 * 1024 * 1024) {
+                    return new Response(JSON.stringify({ error: "Dimensione payload superiore al limite di 2MB." }), { status: 413, headers: corsHeaders });
+                }
+            }
+
+            const expectedSig = await computeHMAC(dev.room_id + deviceId + timestamp + requestId + bodyText, plainDeviceSecret);
+            
+            if (!timingSafeEqual(signature, expectedSig)) {
+                return new Response(JSON.stringify({ error: "Firma HMAC non valida. Accesso negato." }), { status: 401, headers: corsHeaders });
+            }
+
+            await env.DB.prepare(`UPDATE authorized_devices SET last_active = ? WHERE device_id = ?`).bind(now, deviceId).run();
+
+            // =========================================================================
+            // 3. AUTHENTICATED PAIRING INIT (/api/pair/init)
+            // =========================================================================
+
+            if (url.pathname === '/api/pair/init' && request.method === 'POST') {
+                const body = JSON.parse(bodyText);
+                const { roomId } = body;
+
+                if (roomId !== dev.room_id) {
+                    return new Response(JSON.stringify({ error: "Dispositivo non autorizzato per questa stanza." }), { status: 403, headers: corsHeaders });
+                }
+
+                const rawToken = 'pair_' + Array.from(crypto.getRandomValues(new Uint8Array(16)))
+                    .map(b => b.toString(16).padStart(2, '0')).join('');
+                const tokenHash = await hashSHA256(rawToken);
+
+                const expiresAt = now + (10 * 60 * 1000); // 10 Minutes
+
+                await env.DB.prepare(
+                    `INSERT INTO pairing_tokens (token_hash, room_id, created_at, expires_at) VALUES (?, ?, ?, ?)`
+                ).bind(tokenHash, roomId, now, expiresAt).run();
+
+                return new Response(JSON.stringify({ token: rawToken, expiresAt, roomId }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+
+            // =========================================================================
+            // 4. SECURE SYNC API ENDPOINTS
+            // =========================================================================
+
+            if (url.pathname === '/api/sync' && request.method === 'POST') {
+                const body = JSON.parse(bodyText);
+                const { roomId, payload } = body;
+
+                if (roomId !== dev.room_id) {
+                    return new Response(JSON.stringify({ error: "Dispositivo non autorizzato per questa stanza." }), { status: 403, headers: corsHeaders });
+                }
+
+                const id = 'delta_' + now + '_' + Math.random().toString(36).substr(2, 4);
+                await env.DB.prepare(
+                    `INSERT INTO sync_deltas (id, room_id, device_id, store_name, entity_id, action, encrypted_payload, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+                ).bind(id, roomId, deviceId, 'batch', 'batch', 'PUT', payload, now).run();
+
+                return new Response(JSON.stringify({ success: true, timestamp: now }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+
+            if (url.pathname === '/api/sync' && request.method === 'GET') {
+                const roomId = url.searchParams.get('roomId');
+                const since = parseInt(url.searchParams.get('since') || '0');
+
+                if (roomId !== dev.room_id) {
+                    return new Response(JSON.stringify({ error: "Dispositivo non autorizzato per questa stanza." }), { status: 403, headers: corsHeaders });
+                }
+
+                const { results } = await env.DB.prepare(
+                    `SELECT encrypted_payload, updated_at FROM sync_deltas WHERE room_id = ? AND updated_at > ? ORDER BY updated_at ASC LIMIT 50`
+                ).bind(roomId, since).all();
+
+                return new Response(JSON.stringify({ results }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+
+            if (url.pathname === '/api/devices/revoke' && request.method === 'POST') {
+                const body = JSON.parse(bodyText);
+                const { targetDeviceId } = body;
+
+                await env.DB.prepare(
+                    `UPDATE authorized_devices SET status = 'revoked', encrypted_device_secret = '', iv = '' WHERE device_id = ? AND room_id = ?`
+                ).bind(targetDeviceId, dev.room_id).run();
+
+                return new Response(JSON.stringify({ success: true, revoked: targetDeviceId }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+
+            // =========================================================================
+            // 5. SECURE GEMINI AI MEAL PARSER PROXY
+            // =========================================================================
+
+            if (url.pathname === '/api/analyze-meal' && request.method === 'POST') {
+                const body = JSON.parse(bodyText);
+                const { mealDescription } = body;
+
+                if (!mealDescription) {
+                    return new Response(JSON.stringify({ error: "Descrizione del pasto obbligatoria." }), { status: 400, headers: corsHeaders });
+                }
+
+                const apiKey = env.GEMINI_API_KEY;
+                if (!apiKey) {
+                    return new Response(JSON.stringify({ error: "Chiave Gemini non configurata sul server Worker." }), { status: 500, headers: corsHeaders });
+                }
+
+                const promptText = `Agisci come nutrizionista sportivo. Analizza la descrizione del pasto: "${mealDescription}".
+Estrai gli alimenti, le quantità ed i macronutrienti stimati.
+Restituisci ESCLUSIVAMENTE un JSON strutturato con questa struttura senza formattazione markdown:
+{
+  "totalKcal": numero,
+  "totalPro": numero,
+  "totalCho": numero,
+  "totalFat": numero,
+  "totalFiber": numero,
+  "confidence": "alta/media/bassa",
+  "summary": "Breve descrizione del pasto",
+  "items": [
+    { "name": "Nome alimento", "qty": "Quantità", "kcal": numero, "pro": numero, "cho": numero, "fat": numero }
+  ]
+}`;
+
+                const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: promptText }] }],
+                        generationConfig: { responseMimeType: "application/json" }
+                    })
+                });
+
+                if (!geminiRes.ok) {
+                    return new Response(JSON.stringify({ error: "Chiamata Gemini API fallita." }), { status: 502, headers: corsHeaders });
+                }
+
+                const geminiData = await geminiRes.json();
+                let rawJson = geminiData.candidates[0].content.parts[0].text;
+                const start = rawJson.indexOf('{');
+                const end = rawJson.lastIndexOf('}');
+                if (start !== -1 && end !== -1) rawJson = rawJson.substring(start, end + 1);
+
+                const parsed = JSON.parse(rawJson);
+                parsed.dataQuality = 'stimato_gemini';
+
+                return new Response(JSON.stringify(parsed), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+
+            return new Response("Omnibus Secure Sync & Gemini Hub Online", { status: 200, headers: corsHeaders });
+
+        } catch (err) {
+            return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+        }
     }
-  },
 };
+
+// =========================================================================
+// HELPER CRYPTOGRAPHIC FUNCTIONS FOR WORKER
+// =========================================================================
+
+async function hashSHA256(str) {
+    const enc = new TextEncoder();
+    const buf = await crypto.subtle.digest("SHA-256", enc.encode(str));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function getWorkerMasterKey(rawMasterKeyStr) {
+    const enc = new TextEncoder();
+    const keyBuf = await crypto.subtle.digest("SHA-256", enc.encode(rawMasterKeyStr));
+    return await crypto.subtle.importKey(
+        "raw",
+        keyBuf,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"]
+    );
+}
+
+async function encryptSecretWithMasterKey(secretStr, masterKey) {
+    const enc = new TextEncoder();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encryptedBuf = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        masterKey,
+        enc.encode(secretStr)
+    );
+    return {
+        cipherBase64: btoa(String.fromCharCode(...new Uint8Array(encryptedBuf))),
+        ivBase64: btoa(String.fromCharCode(...iv))
+    };
+}
+
+async function decryptSecretWithMasterKey(cipherBase64, ivBase64, masterKey) {
+    const cipherArr = Uint8Array.from(atob(cipherBase64), c => c.charCodeAt(0));
+    const ivArr = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
+    
+    const decryptedBuf = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: ivArr },
+        masterKey,
+        cipherArr
+    );
+    const dec = new TextDecoder();
+    return dec.decode(decryptedBuf);
+}
+
+async function computeHMAC(messageStr, secretStr) {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        "raw",
+        enc.encode(secretStr),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+    );
+    const sigBuf = await crypto.subtle.sign("HMAC", key, enc.encode(messageStr));
+    return Array.from(new Uint8Array(sigBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function timingSafeEqual(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    if (a.length !== b.length) return false;
+    let result = 0;
+    for (let i = 0; i < a.length; i++) {
+        result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+    return result === 0;
+}

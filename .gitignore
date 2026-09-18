@@ -1,0 +1,19 @@
+# OS & IDE junk
+.DS_Store
+.Rhistory
+*.tmp
+*.log
+
+# Cloudflare & Wrangler local environment secrets
+.env
+.dev.vars
+.wrangler/
+
+# Node & dependencies
+node_modules/
+npm-debug.log*
+
+# User local exports & temporary backups
+*.csv
+omnibus_backup_*.json
+scratch/

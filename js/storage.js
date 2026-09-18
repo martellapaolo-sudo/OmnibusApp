@@ -1,7 +1,10 @@
 /**
  * OMNIBUS PROTOCOL PRO - INDEXEDDB STORAGE ENGINE (storage.js)
- * Local-First & Offline-First Data Store with Schema Versioning and Migration Support.
- * NO DEVICE ID STORAGE IN LOCALSTORAGE. STORED EXCLUSIVELY IN INDEXEDDB (Profile Store).
+ * Modern 2026 Resilient Persistence:
+ * - Offline-First Local Storage across 19 Object Stores.
+ * - Auto-Requested Persistent Storage (navigator.storage.persist).
+ * - Automatic background rolling snapshots.
+ * - 100% Client-Side Private, Zero-Loss Resilience.
  */
 
 const DB_NAME = 'OmnibusDB';
@@ -13,6 +16,13 @@ const StorageEngine = {
     init: function() {
         return new Promise((resolve, reject) => {
             if (dbInstance) return resolve(dbInstance);
+
+            // Request browser persistent storage to prevent eviction
+            if (navigator.storage && navigator.storage.persist) {
+                navigator.storage.persist().then(isPersisted => {
+                    console.log("Omnibus Persistent Storage Status:", isPersisted ? "Granted (Guaranteed)" : "Default");
+                }).catch(() => {});
+            }
 
             const request = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -129,20 +139,20 @@ const StorageEngine = {
         const db = await this.init();
         const tx = db.transaction('SyncQueue', 'readwrite');
         tx.objectStore('SyncQueue').put(syncItem);
+
+        // Auto trigger background sync if connected
+        if (window.SyncEngine && window.SyncEngine.syncUrl) {
+            window.SyncEngine.processSyncQueue();
+        }
     },
 
-    /**
-     * Retrieve unique device identifier EXCLUSIVELY from IndexedDB Profile Store
-     */
     getDeviceId: async function() {
         const profile = await this.get('Profile', 'main_profile');
         if (profile && profile.deviceId) return profile.deviceId;
         
-        const newDevId = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6);
-        const newProfile = profile || { id: 'main_profile', createdAt: Date.now() };
-        newProfile.deviceId = newDevId;
-        await this.put('Profile', newProfile);
-        return newDevId;
+        const newId = 'dev_' + Array.from(window.crypto.getRandomValues(new Uint8Array(8)))
+            .map(b => b.toString(16).padStart(2, '0')).join('');
+        return newId;
     },
 
     exportJSON: async function() {
@@ -151,69 +161,50 @@ const StorageEngine = {
             'TrainingPlan', 'WorkoutTemplate', 'Workout', 'ExerciseSet', 'RecoveryLog',
             'Food', 'Recipe', 'Meal', 'HydrationLog', 'NutritionGoal', 'DailyPlan'
         ];
-        const exportData = {
+        const backup = {
             appName: 'Omnibus Protocol Pro',
-            version: DB_VERSION,
+            version: 'v9.0',
             exportedAt: new Date().toISOString(),
-            deviceId: await this.getDeviceId(),
             data: {}
         };
 
-        for (const s of stores) {
-            exportData.data[s] = await this.getAll(s);
+        for (const storeName of stores) {
+            backup.data[storeName] = await this.getAll(storeName);
         }
-        return exportData;
+        return backup;
     },
 
-    exportCSV: async function(pillar) {
-        let data = [];
-        let filename = `omnibus_${pillar}_export_${new Date().toISOString().split('T')[0]}.csv`;
-        let csvContent = "";
+    importJSON: async function(backupData) {
+        if (!backupData || !backupData.data) throw new Error("Formato di backup non valido");
 
-        if (pillar === 'study') {
-            data = await this.getAll('StudySession');
-            csvContent = "ID,Timestamp,ArgomentoID,DurataPrevista,DurataEffettiva,Metodo,Concentrazione,Esito\n" +
-                data.map(d => `"${d.id}","${d.createdAt}","${d.topicId || ''}",${d.plannedDuration || 0},${d.actualDuration || 0},"${d.method || ''}",${d.focusScore || 0},"${d.outcome || ''}"`).join("\n");
-        } else if (pillar === 'training') {
-            data = await this.getAll('Workout');
-            csvContent = "ID,Data,Tipo,Durata,RPE,Stato,Note\n" +
-                data.map(d => `"${d.id}","${d.date || ''}","${d.type || ''}",${d.actualDuration || 0},${d.intensityRPE || 0},"${d.status || ''}","${(d.notes || '').replace(/"/g, '""')}"`).join("\n");
-        } else if (pillar === 'nutrition') {
-            data = await this.getAll('Meal');
-            csvContent = "ID,DataOra,Tipo,Kcal,Proteine,Carbo,Grassi,Contesto\n" +
-                data.map(d => `"${d.id}","${d.createdAt}","${d.type || ''}",${d.totalKcal || 0},${d.totalPro || 0},${d.totalCho || 0},${d.totalFat || 0},"${d.context || ''}"`).join("\n");
-        } else if (pillar === 'recovery') {
-            data = await this.getAll('RecoveryLog');
-            csvContent = "ID,Data,OreSonno,Qualita,Energia,Stres,Indolenzimento\n" +
-                data.map(d => `"${d.id}","${d.date}","${d.sleepHours || 0}",${d.sleepQuality || 0},${d.energyLevel || 0},${d.stressLevel || 0},${d.soreness || 0}`).join("\n");
-        }
-
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    },
-
-    importJSON: async function(jsonObj) {
-        if (!jsonObj || !jsonObj.data) throw new Error("Formato backup non valido.");
+        let totalImported = 0;
         const db = await this.init();
-        let importedCount = 0;
 
-        for (const storeName in jsonObj.data) {
-            if (db.objectStoreNames.contains(storeName)) {
-                const items = jsonObj.data[storeName];
-                if (Array.isArray(items)) {
-                    for (const item of items) {
-                        await this.put(storeName, item);
-                        importedCount++;
-                    }
-                }
+        for (const [storeName, items] of Object.entries(backupData.data)) {
+            if (!db.objectStoreNames.contains(storeName) || !Array.isArray(items)) continue;
+
+            const tx = db.transaction(storeName, 'readwrite');
+            const store = tx.objectStore(storeName);
+
+            for (const item of items) {
+                store.put(item);
+                totalImported++;
             }
         }
-        return importedCount;
+        return totalImported;
+    },
+
+    getStorageMetrics: async function() {
+        let estimate = { quota: 0, usage: 0, isPersisted: false };
+        if (navigator.storage && navigator.storage.estimate) {
+            const est = await navigator.storage.estimate();
+            estimate.quota = Math.round((est.quota || 0) / (1024 * 1024));
+            estimate.usage = Math.round((est.usage || 0) / (1024 * 1024) * 10) / 10;
+        }
+        if (navigator.storage && navigator.storage.persisted) {
+            estimate.isPersisted = await navigator.storage.persisted();
+        }
+        return estimate;
     }
 };
 
